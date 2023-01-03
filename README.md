@@ -26,7 +26,7 @@ Single Cell Interactive Viewer is an R shiny application that allows users to in
     * library(gprofiler2)
 - R data visualization libraries
     * library(highcharter)
-    * library(plotly)
+    * library(plotly) #version='4.9.4'
     * library(rasterly)
     * library(png)
     * library(heatmaply)
