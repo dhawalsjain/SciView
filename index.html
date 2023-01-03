@@ -1,0 +1,142 @@
+<!DOCTYPE html>
+<html lang="en-US" xmlns="http://www.w3.org/1999/xhtml">
+<head>
+  <title>Welcome to Shiny Server!</title>
+  <style type="text/css">
+    body, html {
+      font-family: Helvetica, Arial, sans-serif;
+      background-color: #F5F5F5;
+      color: #114;
+      margin: 0;
+      padding: 0;
+    }
+    a {
+      text-decoration: none;
+    }
+    a:hover {
+      text-decoration: underline;
+    }
+    #titleBar {
+      height: 80px;
+      background-color: #6a51a3;
+      overflow: hidden;
+      border-bottom: 1px solid #6a51a3;
+      -moz-box-shadow:    0px 0px 10px 3px #BBC;
+      -webkit-box-shadow: 0px 0px 10px 3px #BBC;
+      box-shadow:         0px 0px 10px 3px #BBC;
+    }
+    #titleBar #container {
+      margin-top: 14px;
+    }
+    #titleBar h1 {
+      margin: 0 auto .5em auto;
+      padding: .2em;
+      color: #EEE;
+      text-align: center;
+    }
+    #intro {
+      background-color: #DDD;
+      margin: 1em 1em 0 1em;
+      padding: .75em;
+      text-align: justify;
+      border: 1px solid #CCC;
+      font-size: 14px;
+    }
+    #intro p {
+      margin: .3em 0 .3em 0;
+    }
+    #outer-content {
+      max-width: 910px;
+      margin-left: 100px;
+      margin-right: 120px;
+    }
+    #content {
+      margin: 1em auto 1em auto;
+      float: left;
+    }
+    #main{
+      margin-right: 350px;
+      text-align: justify;
+      float: left;
+      line-height: 24px;
+    }
+    #shiny{
+      float: left;
+      width: 305px;
+      margin-left: -330px;
+      padding-left: 20px;
+      border-left: 1px solid #AAA;
+    }
+    #shiny iframe {
+      margin-top: 30px;
+    }
+    .caption{
+      font-size: 13px;
+    }
+    code {
+      background-color: #E5E5E5;
+      border: 1px solid #AAA;
+      -webkit-border-radius: 3px;
+      -khtml-border-radius: 3px;
+      -moz-border-radius: 3px;
+      border-radius: 3px;
+      padding: 0 .5em 0 .5em;
+    }
+  </style>
+</head>
+
+<body>
+  <div id="titleBar">
+    <div id="container">
+      <h1>Welcome to SciView</h1>
+    </div>
+  </div>
+
+  <div id="outer-content">
+    <div id="intro">
+      <p>SciView consists of two independent shiny modules for <b>data deposition</b> and <b> data visualization</b>. Browse individual application by clicking the links below!
+    </p>
+    </div>
+
+    <div id="content">
+      <div id="main">
+
+        <h2><pre><a href="./SciView/">1. SciView: Data Visualization</a></pre></h2>
+        <p>The application visualises single cell expression data for studies processed through the <i> Data Deposition </i> module. Visualization includes interactive browsing of UMAP plots, gene expression plots, co-expression, correlations, and gene-set enrichments. Moreover, for selected genes, users can qualitatively assess expression across available studies or assess genes as potential cell-type and disease markers. It is possible to use the code as a resource by listing all single cell studies inside the helper file. </p>
+        <iframe src="./SciView/" style="border: 1px solid #AAA; width: 850px; height: 350px"></iframe>
+        <div class="caption">
+          When <b> SciView: Data Visualization </b>is properly configured, you'll see a Shiny app in the window above.
+        </div>
+
+        <h2><pre><a href="./SciViewIn/">2. SciView: Data Deposition</a></pre></h2>
+        <p>The application provides an interactive form for processing single cell data. The processed database file can then be visualized using <i>Data Visualization</i> module. This module can be run interactively as well as programatically for easy and batch processing of single cell studies. Current set-up allows interactive data processing. While, advanced users can run the application code separately. </p>
+        <iframe src="./SciViewIn/" style="border: 1px solid #AAA; width: 850px; height: 350px"></iframe>
+        <div class="caption">
+          When <b> SciView: Data Deposition </b> is properly configured, you'll see a Shiny app in the window above.
+        </div>
+        <br>
+
+        <div class="caption">
+          <i>
+          <b>Advanced users:</b> For programatic data processing, setting up the tool as a resource, please contact the developers.
+          <br>
+        </i>
+        </div>
+        <div class="caption">
+         <i>
+          <p><b>Citation:</b> SciViewer- An interactive browser for visualizing single cell datasets. Dhawal Jain, Sikander Hayat, Xinkai Li, Joydeep Charkaborty, Pooja Srinivasa, Michael H. Cho, Edwin K. Silverman, Hobert Moore, Rafael Kramann, Alexis Laux-Biehlmann bioRxiv 2022.02.14.480435.<a href="https://www.biorxiv.org/content/10.1101/2022.02.14.480435v1"> doi: https://doi.org/10.1101/2022.02.14.480435 </a></p>
+        </i>
+        </div>
+
+        <br>
+        <br>
+    </div>
+
+    <hr>
+    <div id="logo">
+           <p style="color:blue; text-align:center"> Copyright (c) 2020 | Version 1.02</p>
+    </div>
+
+  </div>
+</body>
+</html>
