@@ -1,6 +1,6 @@
-# SciViewer
+# SciView
 
-Single Cell Interactive Viewer is an R shiny application that allows users to interactively visualize single cell datasets. The application contains two modules - 1) SciViewerIn: The input application that processes single cell data from .h5ad or .seurat format into either a local or remote database. 2) SciViewer: The main application that allows interactive visualization. 
+Single Cell Interactive Viewer is an R shiny application that allows users to interactively visualize single cell datasets. The application contains two modules - 1) SciViewIn: The input application that processes single cell data from .h5ad or .seurat format into either a local or remote database. 2) SciView: The main application that allows interactive visualization. 
 
 **Installation**
 - The application is developed in R 4.0 and uses several dependancies listed below. 
@@ -39,14 +39,13 @@ Single Cell Interactive Viewer is an R shiny application that allows users to in
 
 - Set up R locally or on your R-server. 
 - Clone the repo and install all above-listed dependencies.
-- Run the **SciViewerIn** applications as following
+- Run the **SciViewIn** applications as following
 ```
-runApp(appDir = "/path/to/SciViewerIn/",launch.browser = T)
+runApp(appDir = "/path/to/SciViewIn/",launch.browser = T)
 ```
-- Run the **SciViewer** applications as following
+- Run the **SciView** applications as following
 ```
-runApp(appDir = "/path/to/SciViewer/",launch.browser = T)
+runApp(appDir = "/path/to/SciView/",launch.browser = T)
 ```
-
 
 
