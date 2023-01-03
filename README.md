@@ -40,6 +40,7 @@ Single Cell Interactive Viewer is an R shiny application that allows users to in
 - Set up R locally or on your R-server. 
 - Clone the repo and install all above-listed dependencies.
 - Copy **genes.db** data file from https://drive.google.com/file/d/1GFiNSQK5KiZ7U0ytv6Lbkod_ln4ZiifD/view?usp=share_link and store under the folder **SciView**
+- If running on ShinyServer, replace the **index.html** file with the provided copy. 
 
 - Run the **SciViewIn** applications as following
 ```
