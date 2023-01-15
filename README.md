@@ -2,7 +2,7 @@
 
 Single Cell Interactive Viewer is an R shiny application that allows users to interactively visualize single cell datasets. The application contains two modules - 1) SciViewIn: The input application that processes single cell data from .h5ad or .seurat format into either a local or remote database. 2) SciView: The main application that allows interactive visualization. 
 
-**Installation**
+**Installation: From git**
 - The application is developed in R 4.0 and uses several dependancies listed below. 
 - R Shiny libraries
     * library(shiny)
@@ -50,5 +50,47 @@ runApp(appDir = "/path/to/SciViewIn/",launch.browser = T)
 ```
 runApp(appDir = "/path/to/SciView/",launch.browser = T)
 ```
+
+**Installation: From Docker**
+- You can run SciView using docker image available through DockerHub 
+- The contianer can be run either on and an AWS-EC2 instance or on cluster
+- The application is exposed to port 3838.
+- While running it on an AWS-EC2, please make sure that the port is open for traffic and is unused by other applications.
+- Make sure that docker is installed on the machine, before running following steps
+
+- Pull Docker image
+```
+docker image pull sciview
+```
+- Check port usage
+```
+lsof -i :3838 
+```
+
+- Remove all docker containers
+```
+docker rm -f $(docker ps -aq) 
+```
+
+- Doker docker container and and mount volume.
+      - In the below command, data under /home/rstudio/data directory of the EC2 instance is mounted into shiny server 
+      - The port 3838 from the docker container is exposed to 8080. Hence, one can listen the application on (DNS):8080
+      - Mounted drive can be used to store the data (i.e. single cell seurat/h5ad ojects and .db files created by the application)
+
+```
+docker run -d -p 8080:3838 \
+    -v /home/rstudio/data/:/srv/shiny-server/data \
+    --name sciview sciviewrun
+```
+
+
+
+
+
+
+
+
+
+
 
 
