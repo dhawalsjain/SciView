@@ -24,8 +24,8 @@ library(DBI)
 #library(RMySQL)
 
 ##-----------------------------------------------
-GENEFILE="genes.db"
-SCDBFILE="DBs.txt"
+GENEFILE="~/genes.db"
+SCDBFILE="~/DBs.txt"
 SOURCEREF='SciView'
 
 ##-- if using remote database
