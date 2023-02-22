@@ -1,5 +1,6 @@
 FROM rocker/shiny:4.0.5
 
+
 # System requirements
 RUN apt-get update -qq && apt-get -y --no-install-recommends install \
     libxml2-dev \
@@ -11,7 +12,16 @@ RUN apt-get update -qq && apt-get -y --no-install-recommends install \
     unixodbc-dev \
     libcurl4-openssl-dev \
     libssl-dev \
-    coinor-libcbc-dev coinor-libclp-dev libglpk-dev
+    coinor-libcbc-dev coinor-libclp-dev libglpk-dev \
+    r-base \
+    python3.8 \
+    python3-dev \
+    python3-pip \
+    python3-venv
+
+CMD alias python=/usr/bin/python3.8
+CMD alias python3=/usr/bin/python3.8
+RUN ln -s /usr/bin/python3.8 /usr/bin/python
     
 ## update system libraries
 RUN apt-get update && \
@@ -47,21 +57,26 @@ Matrix \
 SparseM \
 dplyr \
 remotes \
-BiocManager
+BiocManager \
+reshape \
+ggthemes
 
 RUN Rscript -e 'install.packages("plotly",version="4.9.4")'
 RUN Rscript -e 'remotes::install_github("plotly/rasterly")'
 RUN Rscript -e 'BiocManager::install("GenomicRanges")'
+RUN Rscript -e 'install.packages("anndata",version="0.7.5.3")'
 
-COPY /home/rstudio/scripts/SciViewerDev/pddExpn_0.1.0.tar.gz /srv/shiny-server/
-COPY /home/rstudio/scripts/SciViewerDev/index.html /srv/shiny-server/
-COPY /home/rstudio/scripts/SciViewerDev/README.md /srv/shiny-server/
-COPY /home/rstudio/scripts/SciViewerDev/installs.R /srv/shiny-server/
-COPY /home/rstudio/scripts/SciViewerDev/SciViewIn/* /srv/shiny-server/SciViewIn/
-COPY /home/rstudio/scripts/SciViewerDev/SciView/* /srv/shiny-server/SciView/
-COPY /home/rstudio/data/SCS/HS_healthyCholangiocytes_10x.h5ad /srv/shiny-server/data/
+## Data and Scripts
+COPY pddExpn_0.1.0.tar.gz /srv/shiny-server/ 
+COPY index.html /srv/shiny-server/ 
+COPY README.md /srv/shiny-server/ 
+COPY installs.R /srv/shiny-server/ 
+COPY Dockerfile /srv/shiny-server/ 
+COPY SciViewIn/ /srv/shiny-server/SciViewIn/ 
+COPY SciView/ /srv/shiny-server/SciView/ 
+RUN mkdir -p /srv/shiny-server/data
 
-RUN R -e 'install.packages("/srv/shiny-server/pddExpn_0.1.0.tar.gz", repos = NULL, type = "source")'
+RUN Rscript -e 'install.packages("/srv/shiny-server/pddExpn_0.1.0.tar.gz", repos = NULL, type = "source")'
 
 USER shiny
 
