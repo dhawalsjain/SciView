@@ -73,7 +73,7 @@ lsof -i :3838
 docker rm -f $(docker ps -aq) 
 ```
 
-- Doker docker container and and mount volume.
+- Doker docker container and and mount volume
       * In the below command, data under /home/rstudio/data directory of the EC2 instance is mounted into shiny server
       * The port 3838 from the docker container is exposed to 8080. Hence, one can listen the application on (DNS-server-address):8080
       * Mounted drive can be used to store the data (i.e. single cell seurat/h5ad ojects and .db files created by the application)
