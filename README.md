@@ -80,13 +80,18 @@ docker rm -f $(docker ps -aq)
 
 ```
 docker run -d -p 8080:3838 \
-    -v /home/rstudio/data/:/srv/shiny-server/data \
+    -v /home:/srv/shiny-server/data \
     --name sciview sciview
 ```
 
 - If you are using local linux machine for running SciView, you can listen to the application on 127.0.0.1:8080
 
+- You can check the run logs on the above running docker instance by launching interactive shell
 
+```
+docker exec -it sciview bash
+
+```
 
 
 
