@@ -67,14 +67,15 @@ server <- function(input, output,session) {
     run = NULL,
     cell_type = NULL,
     barcode = NULL,
-    clusterx = NULL,
-    clustery = NULL,
     donor = NULL,
     disease = NULL,
     de=NULL,
     covariates = NULL,
     contvars = NULL,
-    catvars = NULL
+    catvars = NULL,
+    pot_contvars = NULL,
+    pot_catvars = NULL
+    
   )
   observeEvent({input$infile},{
     inFile <- parseFilePaths(roots=VARS$roots, input$infile)
@@ -104,14 +105,14 @@ server <- function(input, output,session) {
       variables$run = NULL
       variables$cell_type = NULL
       variables$barcode = NULL
-      variables$clusterx = NULL
-      variables$clustery = NULL
       variables$donor = NULL
       variables$de = NULL
       variables$disease = NULL
       variables$covariates = NULL
       variables$contvars = NULL
       variables$catvars = NULL
+      variables$pot_contvars = NULL
+      variables$pot_catvars = NULL
       
       variables$inptfile_path=unname(inFile$datapath)
       ext <- tools::file_ext(unname(inFile$datapath))
@@ -172,7 +173,7 @@ server <- function(input, output,session) {
   output$vars <- renderUI({
     orderInput('variables', 'Available variables in the meta-data file', items = colnames(variables$meta),
                item_class = 'info',
-               connect = c('cell_type','donor','disease','covariates','clusterx','clustery')) #'barcode',
+               connect = c('cell_type','donor','disease','covariates')) #'barcode','clusterx','clustery',
   })
   output$metatable = DT::renderDataTable({
     DT::datatable(variables$meta,rownames = F,
@@ -185,33 +186,30 @@ server <- function(input, output,session) {
   output$cell_type <- renderUI({
     orderInput('cell_type', 'Cell cluster annotation column', items = NULL, placeholder = 'Drag item/s here...', connect = 'variables')
   })
-  output$clusterx <- renderUI({
-    orderInput('clusterx', 'X-coordinate of reduction method', items = NULL, placeholder = 'Drag item/s here...', connect = 'variables')
-  })
-  output$clustery <- renderUI({
-    orderInput('clustery', 'Y-coordinate of reduction method', items = NULL, placeholder = 'Drag item/s here...', connect = 'variables')
-  })
-  
+
   output$vars1 <- renderUI({
-    qq <- colnames(variables$meta)
-    if(isTruthy(input$cell_type_order[[2]])){
-      qq <- qq[qq!=input$cell_type_order[[2]]]
+    if(isTruthy(variables$meta)){
+      qq <- colnames(variables$meta)
+      if(isTruthy(input$cell_type_order[[2]])){
+        qq <- qq[qq!=input$cell_type_order[[2]]]
+      }
+      qq <- qq[-grep('^V1_|^V2_|SAMPID',qq)]
+      qq <- qq[apply(variables$meta[,qq],2,function(x) ifelse(length(unique(x))==1,F,T))]
+      variables$pot_contvars <- qq[apply(variables$meta[,qq],2,function(x) ifelse(length(unique(x))>100,T,F))]
+      variables$pot_catvars <- qq[apply(variables$meta[,qq],2,function(x) ifelse(length(unique(x))<20,T,F))]
+      
+      qq <- qq[!qq%in%c(variables$pot_contvars,variables$pot_catvars)]
+      
+      orderInput('variables1', 'Available variables in the meta-data file with uncertainty', items = qq,
+                 item_class = 'warning',
+                 connect = c('contvars','catvars'))
     }
-    if(isTruthy(input$clusterx_order[[2]])){
-      qq <- qq[qq!=input$clusterx_order[[2]]]
-    }
-    if(isTruthy(input$clustery_order[[2]])){
-      qq <- qq[qq!=input$clustery_order[[2]]]
-    }
-    orderInput('variables1', 'Available variables in the meta-data file', items = qq,
-               item_class = 'warning',
-               connect = c('contvars','catvars'))
   })
   output$contvars <- renderUI({
-    orderInput('contvars', 'Continuous variables in the data, that you want to use in the display', items = NULL, placeholder = 'Drag item/s here...', connect = 'variables1')
+    orderInput('contvars', 'Continuous variables in the data, that you want to use in the display', items = variables$pot_contvars, placeholder = 'Drag item/s here...', connect = 'variables1')
   })
   output$catvars <- renderUI({
-    orderInput('catvars', 'Categorical variables in the data, that you want to use in the display', items = input$cell_type_order[[2]], placeholder = 'Drag item/s here...', connect = 'variables1')
+    orderInput('catvars', 'Categorical variables in the data, that you want to use in the display', items = c(variables$pot_catvars,input$cell_type_order[[2]]), placeholder = 'Drag item/s here...', connect = 'variables1')
   })
   
   output$vars2 <- renderUI({
@@ -258,8 +256,6 @@ server <- function(input, output,session) {
       if(isTruthy(input$de)) { variables$de = input$de}
       if(isTruthy(input$simarker)) { variables$simarker = input$simarker}
       if(isTruthy(input$cell_type_order[[2]])) { variables$cell_type = input$cell_type_order[[2]][1]}
-      if(isTruthy(input$clusterx_order[[2]])) { variables$clusterx = input$clusterx_order[[2]][1]}
-      if(isTruthy(input$clustery_order[[2]])) { variables$clustery = input$clustery_order[[2]][1]}
       if(isTruthy(input$donor_order[[2]])) { variables$donor = input$donor_order[[2]][1]}
       if(isTruthy(input$disease_order[[2]])) { variables$disease = input$disease_order[[2]][1]}
       if(isTruthy(input$covariates_order[[2]])) { variables$covariates = paste0(input$covariates_order[[2]],collapse = ",")}
@@ -394,28 +390,33 @@ server <- function(input, output,session) {
   })
   
   ##----- run batch
-  observeEvent({input$batchrun},{
-    if(isTruthy(input$batchrun) & isTruthy(input$paramfile)){
+  observeEvent(c(input$paramfile, input$ab5rtea73dfg3),{
+    if(isTruthy(input$batchrun) & isTruthy(input$paramfile) & isTruthy(input$ab5rtea73dfg3)){
       file <- input$paramfile
       ext <- tools::file_ext(file$datapath)
       req(file)
       validate(need(ext == "txt", "Please upload a parameter file"))
       
+      scProg <- shiny::Progress$new()
+      on.exit(scProg$close())
+      scProg$set(message = "Reading batch file..", value = 0)
+      
       param <- read.delim(file$datapath,as.is=T,stringsAsFactors = F)
       param <- split(param,param$study)
       
-      scProg <- shiny::Progress$new()
-      on.exit(scProg$close())
-      scProg$set(message = "Running interactive batch..", value = 0)
+      cat("number of studies ",length(param),"\n")
+      
+      scProg$set(message = "Running interactive batch..", value = 0.1)
       
       for(studyNum in 1:length(param)){
         
-        scProg$set(message = paste0("Working on: ",names(param)[i]), value = (studyNum-1)/length(param) )
+        scProg$set(message = paste0("Working on: ",names(param)[studyNum]), value = (studyNum-1)/length(param) )
         
         cf = param[[studyNum]]
+        cat(paste0(cf[cf$field=="inptfile_path",]$value,"\n"))
         cf$value <- as.character(cf$value)
         cf$field <- as.character(cf$field)
-        so <- readInpscRNAseq(filepath=cf[cf$field=="inptfile",]$value,intractv=T)
+        so <- readInpscRNAseq(filepath=cf[cf$field=="inptfile_path",]$value,intractv=T)
         write.scstudy2.sqlitedb(so = so,
                                 db_address = cf[cf$field=="db",]$value,
                                 StudyName = cf[cf$field=="studyname",]$value,
@@ -455,8 +456,8 @@ server <- function(input, output,session) {
 ui <- fluidPage(
   shiny::HTML(
     "<div style = 'background-color:#ffffff;color: #6a51a3;font-size:30px;font-weight:bold; vertical-align:middle'>
-     <img src = 'logo.png' align = 'left'  height = '55px' width = '200px'>
-        Single-cell Interactive Viewer: Data Input 
+     <img src = 'logo.jpg' align = 'left'  height = '55px' width = '200px'>
+        Single-cell Interactive View(er): Data Deposition 
      </div>"
   ),
   tags$style(HTML("
@@ -504,6 +505,7 @@ ui <- fluidPage(
   conditionalPanel(
     condition = "input.batchrun>'0'",
     fileInput("paramfile", "Choose Parameter File", accept = ".txt"),
+    actionButton("ab5rtea73dfg3","Go!",icon = icon("play-circle"))
   ),
   tags$br(),
   tags$br(),
@@ -542,14 +544,19 @@ ui <- fluidPage(
   
   h4('3.1.Continuous/Categorical variables'),
   tags$hr(style = "border-top: 1px solid #d9d9d9;"),
-  shiny::HTML('<i> continuous variables are grouped into 5 distinct groups. while, for each categorical variable arepresented by distinct colors.</i>'),
+  shiny::HTML('<i> SciView automatically defines continuous and categorical variables. If there is uncertainty, the variables are available for user to drag and drop in the appropriate bucket.</i>'),
   uiOutput("vars1"),
   tags$br(),
-  fluidRow(column(width = 6,uiOutput("contvars"),tags$br()),
-           column(width = 6,uiOutput("catvars"),tags$br())
+  fluidRow(column(width = 6,
+                  div(style='width:500px;overflow-x: auto;height:250px;overflow-y: auto;',uiOutput("contvars"))
+                  ),
+           column(width = 6,
+                  div(style='width:500px;overflow-x: auto;height:250px;overflow-y: auto;',uiOutput("catvars"))
+           ),
+           tags$br()
   ),
   tags$br(),
-  
+
   
   h2('4.Calculating markers/ differential expression'),
   tags$hr(style = "border-top: 1px solid #000000;"),
@@ -634,7 +641,7 @@ ui <- fluidPage(
   tags$br(),
   fluidRow(#column(width = 6,textInput("tissue", "Tissue used for the scRNA-seq", NULL)),
            column(width = 6,selectInput(inputId = "tissue",label =  "Tissue used for the scRNA-seq", 
-                                        choices = c("Adipose tissue","Adrenal gland","Amygdala","Brain","Blood","Breast","Caudate","Cerebellum","Cerebral cortex","Cervix","Colon","Endometrium","Esophagus","Fallopian tube","Heart","Hippocampus","Hypothalamus","Kidney","Liver","Lung","Nucleus accumbens","Ovary","Pancreas","Pituitary gland","Prostate","Putamen","Retina","Salivary gland","Skeletal muscle","Skin","Small intestine","Spinal cord","Spleen","Stomach","Substantia nigra","Testis","Thyroid gland","Urinary bladder","Vagina"),
+                                        choices = c("Adipose tissue","Adrenal gland","Amygdala","Brain","Blood","Breast","Caudate","Cerebellum","Cerebral cortex","Cervix","Colon","Endometrium","Esophagus","Fallopian tube","Heart","Hippocampus","Hypothalamus","Kidney","Liver","Lung","Nucleus accumbens","Ovary","Pancreas","Pituitary gland","Prostate","Putamen","Retina","Salivary gland","Skeletal muscle","Skin","Small intestine","Spinal cord","Spleen","Stomach","Substantia nigra","Testis","Thyroid gland","Urinary bladder","Vagina","Multiple","Epithelial","Endothelial","Immune","Stromal","Neuronal"),
                                         selected = NULL,multiple = F)),
            column(width = 6,textInput("shotdescr", "One-line description of the study", NULL))
            

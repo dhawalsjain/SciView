@@ -29,6 +29,12 @@ RUN apt-get update && \
     apt-get clean
     
 
+RUN wget https://repo.anaconda.com/miniconda/Miniconda3-latest-Linux-x86_64.sh \
+     && bash Miniconda3-latest-Linux-x86_64.sh -b \
+     && rm -f Miniconda3-latest-Linux-x86_64.sh 
+
+ENV PATH=/root/miniconda3/bin:${PATH} 
+
 ENV _R_SHLIB_STRIP_=true
 
 RUN install2.r --error --skipinstalled \
@@ -62,6 +68,9 @@ reshape \
 ggthemes
 
 RUN Rscript -e 'install.packages("plotly",version="4.9.4")'
+RUN Rscript -e 'install.packages("future")'
+RUN Rscript -e 'install.packages("ggridges")'
+RUN Rscript -e 'install.packages("sparkline")'
 RUN Rscript -e 'remotes::install_github("plotly/rasterly")'
 RUN Rscript -e 'BiocManager::install("GenomicRanges")'
 RUN Rscript -e 'install.packages("anndata",version="0.7.5.3")'

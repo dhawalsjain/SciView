@@ -1,3 +1,4 @@
+source("vars.R",local = TRUE,encoding = "UTF-8")
 
 ##------------------------------------------------------------------------
 ## Input functions
@@ -93,16 +94,15 @@ matrix.reformat <- function(mat,meta,intractv=F){
 }
 
 
-seurat2expression.summary <- function(so,si_celltype=NULL,
-                                      si_donor=NULL,my_assay='RNA',intractv=F){
+seurat2expression.summary <- function(so,si_celltype=NA,
+                                      si_donor=NA,my_assay='RNA',intractv=F){
   
-
   if(intractv==T){
     scProg <- shiny::Progress$new()
     on.exit(scProg$close())
     scProg$set(message = "computing expression summaries..", value = 0)
   }
-  if(is.null(si_celltype)){
+  if(is.na(si_celltype)){
     if(intractv==T){
       scProg$set(message = "No celltype information is specified for expression aggregation", value = 0.1)
     }
@@ -112,52 +112,83 @@ seurat2expression.summary <- function(so,si_celltype=NULL,
     scProg$set(message = "by default the function averages the gene expression as normalized by the user", value = 0.2)
   }
   message("  by default the function averages the gene expression as normalized by the user\n")
-  expn.summaryperfeature <- c()
   
-  m <- FetchData(so,vars = c(si_celltype,si_donor))
-  if(is.null(si_donor)) m$donor <- "A"
-  names(m) <- c('cell_type','donor')
-  m$id <- paste0(m$cell_type,"|",m$donor)
-  m <- split(m,m$id)
-  my.data <- so@assays[[my_assay]]@data
-  for(i in 1:length(m)){
-    if(intractv==T){
-      scProg$set(message = paste0('  ..working on expression group: ',i,"/",length(m),' (',names(m)[i],')'), value = 0)
-    }
-    message('  ..working on expression group: ',i,"/",length(m),' (',names(m)[i],')')
-    x <- my.data[,rownames(m[[i]])]
-    if(nrow(m[[i]])>1){
-      y <- data.frame(
-        cell_type=unique(m[[i]]$cell_type),
-        donor = unique(m[[i]]$donor),
-        feature = rownames(x),
-        norm_avg_priorLT= apply(x,1,function(x) { log2(mean(2^x,na.rm=T)) }),
-        norm_avg= apply(x,1,mean,na.rm=T),
-        norm_sd = apply(x,1,sd,na.rm=T),
-        norm_gmean = 0
-      )
-      expn.summaryperfeature <- rbind(expn.summaryperfeature,y)
+  if(is.na(si_donor)){
+    x <- AverageExpression(object = so,features = rownames(so),return.seurat = FALSE,
+                           group.by = c(si_celltype),slot = "data",verbose = TRUE)
     }else{
-      y <- data.frame(
-        cell_type=unique(m[[i]]$cell_type),
-        donor = unique(m[[i]]$donor),
-        feature = names(x),
-        norm_avg_priorLT= x,
-        norm_avg= x,
-        norm_sd = 0,
-        norm_gmean = 0
-      )
-      expn.summaryperfeature <- rbind(expn.summaryperfeature,y)
-    }
-    rm(x,y)
+      x <- AverageExpression(object = so,features = rownames(so),return.seurat = FALSE,
+                             group.by = c(si_celltype,si_donor),slot = "data",verbose = TRUE)
   }
-  rm(my.data,m,i)
-  gc()
-  expn.summaryperfeature <- expn.summaryperfeature[abs(expn.summaryperfeature$norm_avg)>0,]
+  if(intractv==T){
+    scProg$set(message = paste0('  ..computed average expression values'), value = 0.8)
+  }
+  message('  ..computed average expression values')
+  
+  x <- x[[1]] 
+  x <- as.data.frame(x)
+  if(is.na(si_donor)){
+    names(x) <- paste0(names(x),'_A') 
+    mycomb <- data.frame(Var1=levels(as.factor(so@meta.data[,si_celltype])),Var2='A')
+  }else{
+    mycomb <- expand.grid(levels(as.factor(so@meta.data[,si_celltype])),
+                          levels(as.factor(so@meta.data[,si_donor])),stringsAsFactors = F)
+  }
+  mycomb$id <- paste(mycomb$Var1,mycomb$Var2,sep = "_")
+  mycomb <- mycomb[match(names(x),mycomb$id),]
+  if(sum(names(x)==mycomb$id)!=ncol(x)) stop('  ..the cell/donor column combination is not fully captured while generating expression summary')
+  mycomb$code <- paste0("ab",1:nrow(mycomb))
+  names(x) <- mycomb$code
+  x <- cbind(feature=rownames(x),x)
+  rownames(x) = NULL
+  names(mycomb)[1:2] <- c('cell_type','donor')
+  
+  #expn.summaryperfeature <- c()
+  #m <- FetchData(so,vars = c(si_celltype,si_donor))
+  #if(is.null(si_donor)) m$donor <- "A"
+  #names(m) <- c('cell_type','donor')
+  #m$id <- paste0(m$cell_type,"|",m$donor)
+  #m <- split(m,m$id)
+  #my.data <- so@assays[[my_assay]]@data
+  #for(i in 1:length(m)){
+  #  if(intractv==T){
+  #    scProg$set(message = paste0('  ..working on expression group: ',i,"/",length(m),' (',names(m)[i],')'), value = 0)
+  #  }
+  #  message('  ..working on expression group: ',i,"/",length(m),' (',names(m)[i],')')
+  #  x <- my.data[,rownames(m[[i]])]
+  #  if(nrow(m[[i]])>1){
+  #    y <- data.frame(
+  #      cell_type=unique(m[[i]]$cell_type),
+  #      donor = unique(m[[i]]$donor),
+  #      feature = rownames(x),
+  #      norm_avg_priorLT= apply(x,1,function(x) { log2(mean(2^x,na.rm=T)) }),
+  #      norm_avg= apply(x,1,mean,na.rm=T),
+  #      norm_sd = apply(x,1,sd,na.rm=T),
+  #      norm_gmean = 0
+  #    )
+  #    expn.summaryperfeature <- rbind(expn.summaryperfeature,y)
+  #  }else{
+  #    y <- data.frame(
+  #      cell_type=unique(m[[i]]$cell_type),
+  #      donor = unique(m[[i]]$donor),
+  #      feature = names(x),
+  #      norm_avg_priorLT= x,
+  #      norm_avg= x,
+  #      norm_sd = 0,
+  #      norm_gmean = 0
+  #    )
+  #    expn.summaryperfeature <- rbind(expn.summaryperfeature,y)
+  #  }
+  #  rm(x,y)
+  #}
+  #rm(my.data,m,i)
+  #gc()
+  #expn.summaryperfeature <- expn.summaryperfeature[abs(expn.summaryperfeature$norm_avg)>0,]
+  
   if(intractv==T){
     scProg$set(message = "Done!", value = 1)
   }
-  return(expn.summaryperfeature)
+  return(  list(expn.summaryperfeature=x,mykeys=mycomb) )
 }
 
 
@@ -199,6 +230,21 @@ seurat2.signatures <- function(sa,signature_file=NULL,my_assay='RNA',intractv=F)
   #m  <- data.frame(SAMPID=rownames(meta),
   #                 signature.value = apply(meta,1,function(x) paste0(x,collapse = ",")))
   return(list(sig=meta,sigfile=signature_file))
+}
+
+
+writedb <- function(tableName=NULL,datafrm=NULL,db_address,OUTDIR=NULL,overwrite=T){
+  if(!is.null(tableName) & !is.null(datafrm)){
+    if(!is.null(OUTDIR)){
+      connSc <- RSQLite::dbConnect(RSQLite::SQLite(),paste0(OUTDIR,"/",db_address))
+    }else{
+      connSc <- RSQLite::dbConnect(RSQLite::SQLite(),paste0(db_address))
+    }
+    datafrm <- remove_dupcolumns(datafrm)
+    RSQLite::dbWriteTable(connSc,tableName,datafrm,overwrite=overwrite)
+    RSQLite::dbListTables(connSc)
+    RSQLite::dbDisconnect(connSc)
+  }
 }
 
 
@@ -249,6 +295,7 @@ seurat2sqlite <- function(so=NULL,si_study=NULL,
   if(length(si_assays)>1){
     warning('The provided Seurat object contains multiple assay objects.Please make sure that for non-RNA assays you have appropriately normalized the data.RNA assay object will be tested by default and log-normalized in case non-normalized data is found.\n')
   }
+  message(paste0("IMPORTANT: Range of the provided RNA data: ",range(so[[si_assays[1]]]@data),"\n"))
   if(range(so[[si_assays[1]]]@data)[2]>25){
     if(intractv==T){
       scProg$set(message = "Normalizing the RNA data..", value = 0.3)
@@ -301,101 +348,83 @@ seurat2sqlite <- function(so=NULL,si_study=NULL,
     signature.list <- c()
     si_study$assay <- my_assay
     
-    #-- compute gene expression summary
+    #--------------------------------
+    #--(1) study dataframe
+    #--------------------------------
+    if(isTRUE(nrow(si_study)>0)){
+      if(intractv==T){
+        scProg$set(message = "Writing down study metadata", value = 0.35)
+      }
+      message('Writing down study metadata\n')
+      StudyName = paste0(my_assay,"_",si_study$Database)
+      si_study$Database = StudyName
+      if(length(grep("^scRNA_",db_address))==0){
+        db_address <- paste0("scRNA_",my_assay,"_",db_address)
+      }
+      writedb(tableName=paste0(StudyName,"_study"),datafrm=si_study,db_address=db_address,OUTDIR=OUTDIR,overwrite=T)
+    }else(
+      stop(" single cell study dataframe is not found. Exiting!")
+    )
+    
+    #--------------------------------
+    #--(2) matrix reformatting
+    #--------------------------------
+    if(intractv==T){
+      scProg$set(message = "Reformatting the matrix for writing down", value = 0.4)
+    }
+    message('Reformatting the matrix for writing down\n')
+    l<- matrix.reformat(mat=so@assays[[my_assay]]@data,
+                        meta=my.meta,intractv = intractv)
+    if(isTRUE(nrow(l[[1]])>0) & isTRUE(nrow(l[[2]])>0)){
+      writedb(tableName=paste0(StudyName,"_metaFeatures"),datafrm=l[[2]],db_address=db_address,OUTDIR=OUTDIR,overwrite=T)
+      writedb(tableName=paste0(StudyName,"_data"),datafrm=l[[1]],db_address=db_address,OUTDIR=OUTDIR,overwrite=T)
+    }
+    rm(l)
+    gc()
+    
+    
+    #--------------------------------
+    #--(3) compute gene expression summary
+    #--------------------------------
     message(' computing the expression summary for each feature. \n')
     if(intractv==T){
-      scProg$set(message = "computing the expression summary for each feature...", value = 0.3)
+      scProg$set(message = "computing the expression summary for each feature...", value = 0.5)
     }
     expn.summaryperfeature <- seurat2expression.summary(so=so,
                                                         si_celltype = si_celltype,
                                                         si_donor = si_donor,
                                                         my_assay = my_assay,
                                                         intractv=intractv)
+    if(isTRUE(nrow(expn.summaryperfeature[[1]])>0)){
+      writedb(tableName=paste0(StudyName,"_FeatureSummary"),datafrm=expn.summaryperfeature[[1]],db_address=db_address,OUTDIR=OUTDIR,overwrite=T)
+      writedb(tableName=paste0(StudyName,"_FeatureSummaryKeys"),datafrm=expn.summaryperfeature[[2]],db_address=db_address,OUTDIR=OUTDIR,overwrite=T)
+    }
+    rm(expn.summaryperfeature)
     gc()
     
-    #-- signature calculations
+    
+    #--------------------------------
+    #--(4) signature calculations
+    #--------------------------------
     if(!is.null(signature_file) & my_assay=='RNA'){
       message(' Calculating gene signatures using aggregation method.\n')
       if(intractv==T){
-        scProg$set(message = "Calculating gene signatures using aggregation method....", value = 0.4)
+        scProg$set(message = "Calculating gene signatures using aggregation method....", value = 0.6)
       }
       signature.list <- seurat2.signatures(sa = so,
                               signature_file = signature_file,
                               my_assay = my_assay)
-      
     }
+    if(isTRUE(length(signature.list)>0)){
+      writedb(tableName=paste0(StudyName,"_SignatureMatrix"),datafrm=signature.list[[1]],db_address=db_address,OUTDIR=OUTDIR,overwrite=T)
+      writedb(tableName=paste0(StudyName,"_SignatureFile"),datafrm=signature.list[[2]],db_address=db_address,OUTDIR=OUTDIR,overwrite=T)
+    }
+    rm(signature.list)
     gc()
     
-    #-- compute cell type markers
-    if(intractv==T){
-      scProg$set(message = paste0(" Computing markers for the variable/s:", si_cell_col,"\n"), value = 0.4)
-    }
-    si_cell_col = unlist(strsplit(as.character(si_cell_col),","))
-    if(si_compute_cellmarker==T & !is.null(si_cell_col)){
-      if(is.null(si_cell_col)) stop(" Column name/s of the variable against which markers are to be computed is not provided!\n")
-      if(sum(si_cell_col%in%names(so@meta.data))!=length(si_cell_col)){
-        cat(paste0(si_cell_col,collapse = ","),"\n")
-        cat(paste0(names(so@meta.data),collapse = ","),"\n")
-        cat(sum(si_cell_col%in%names(so@meta.data)),"  ",length(si_cell_col),"\n")
-        stop(' one or more marker column names are not present in the Seurat object\n')
-      }
-      message(" Computing markers for the variable/s:", si_cell_col,"\n")
-      if(length(si_cell_col)>1){
-        message(' -> Note: multiple varialbes are provided for computing the markers. Will proceed!\n')
-      }
-      for(mycolm in si_cell_col){
-        message("  ..computing markers for the variable:", mycolm,"\n")
-        if(intractv==T){
-          scProg$set(message = paste0("  ..computing markers for the variable:", mycolm,"\n"), value = 0.4)
-        }
-        Idents(so) <- mycolm
-        my.markers <- tryCatch({FindAllMarkers(so,  
-                                               min.pct = 0.25, 
-                                               logfc.threshold = 0.25,
-                                               return.thresh = 0.1,
-                                               test.use = 'wilcox')
-        },error=function(e){
-          return(c())
-        })
-        if(!is.null(my.markers)){
-          names(my.markers) <- c("P.Value", "logFC", "pct.1", "pct.2", 
-                                 "adj.P.Val", "Tag", "geneSymbol")
-          my.markers$Test <- paste0(my.markers$Tag,"-Rest")
-          my.markers$AveExpr <- NA
-          my.markers$t <- NA
-          my.markers$B <- NA
-          my.markers$Assay <- my_assay
-          my.markers$Method <- 'Wilcox'
-          my.markers <- my.markers[,c("logFC", "AveExpr", "t", 
-                                      "P.Value", "adj.P.Val", "B", "Test","Tag",
-                                      "geneSymbol",'Method','Assay',"pct.1","pct.2")]
-          si_cell_markers_tmp <- rbind(si_cell_markers_tmp,my.markers)
-        }
-        rm(my.markers)
-      }
-      rm(mycolm)
-    }else if(si_compute_cellmarker ==F & isTruthy(si_cell_markers)){
-      mycols <- c("logFC", "AveExpr", "t", "P.Value", "adj.P.Val", "B", "Test","Tag","geneSymbol")
-      cf <- NULL
-      ext <- tools::file_ext(si_cell_markers)
-      if(ext=='txt'){
-        cf = read.delim(si_cell_markers,as.is = T,colClasses = "#",sep="\t")
-      }else if(ext == 'csv'){
-        cf = read.csv2(si_cell_markers,as.is = T,colClasses = "#")
-      }
-      if(sum(mycols%in%names(cf))!=length(mycols)){
-        warning("One or more columns are missing in the provided cell marker file. Please ensure that correct file is provided. Skipping this file and moving on!")
-      }else{
-        mycols <- append(mycols,
-                         names(cf)[!names(cf)%in%mycols]
-        )
-        si_cell_markers_tmp <- cf[,mycols]
-      }
-      rm(cf,ext)
-    }
-    gc()
-    
-    #-- compute disease markers
+    #--------------------------------
+    #--(5) compute disease markers
+    #--------------------------------
     if(si_compute_diseasemarker==T &  !is.null(si_disease_col) & !is.null(si_celltype)){
       my.disease <- levels(as.factor(so@meta.data[,si_disease_col]))
       my.celltypes <- levels(as.factor(so@meta.data[,si_celltype]))
@@ -409,10 +438,10 @@ seurat2sqlite <- function(so=NULL,si_study=NULL,
       message("  ..total ",nrow(my.tests)," contrasts are found. Starting the execution!\n")
       message("  ..this can take a while.\n")
       if(intractv==T){
-        scProg$set(message = "  ..computing DEG", value = 0.7)
+        scProg$set(message = "  ..computing DEG", value = 0.8)
       }
       so$temp_celltype <- so@meta.data[,si_celltype]
-      Idents(so) <- si_disease_col
+      Idents(so) <- so@meta.data[[si_disease_col]]
       for(i in 1:nrow(my.tests)){
         sa <- subset(x = so, idents = c(my.tests$Var1[i],my.tests$Var2[i]))
         for(f in my.celltypes){
@@ -423,15 +452,18 @@ seurat2sqlite <- function(so=NULL,si_study=NULL,
           })
           if(is.null(sb)) next
           if(intractv==T){
-            scProg$set(message = paste0('  ..working on celltype: ',f ,"  (",my.tests$Var1[i],"-", my.tests$Var2[i],")\n"), value = 0.7)
+            scProg$set(message = paste0('  ..working on celltype: ',f ,"  (",my.tests$Var1[i],"-", my.tests$Var2[i],")\n"), value = 0.9)
           }
           message(paste0('  ..working on celltype: ',f ,"  (",my.tests$Var1[i],"-", my.tests$Var2[i],")\n"))
           q <- tryCatch({
+            plan("multicore", workers = MCORES)
             FindMarkers(sb, ident.1 = my.tests$Var1[i], 
-                        ident.2 = my.tests$Var2[i],print.bar = T,
+                        ident.2 = my.tests$Var2[i],
+                        print.bar = T,
                         min.pct = 0.25, 
                         logfc.threshold = 0.25,
                         return.thresh = 0.1,
+                        max.cells.per.ident = 2000,
                         min.cells.group = 3,
                         test.use = 'wilcox')
           },error=function(e){
@@ -477,63 +509,103 @@ seurat2sqlite <- function(so=NULL,si_study=NULL,
       }
       rm(cf)
     }
-    gc()
-    
-    #-- matrix reformatting
-    if(intractv==T){
-      scProg$set(message = "Reformatting the matrix for writing down", value = 0.8)
+    if(isTRUE(nrow(si_disease_markers_tmp)>0)){
+      writedb(tableName=paste0(StudyName,"_DEG"),datafrm=si_disease_markers_tmp,db_address=db_address,OUTDIR=OUTDIR,overwrite=T)
     }
-    message('Reformatting the matrix for writing down\n')
-    l<- matrix.reformat(mat=so@assays[[my_assay]]@data,
-                        meta=my.meta,intractv = intractv)
+    rm(si_disease_markers_tmp)
     gc()
+    plan("sequential")
     
-    #-- write down
+    
+    #--------------------------------
+    #--(6) compute cell type markers
+    #--------------------------------
     if(intractv==T){
-      scProg$set(message = 'Writing down the matrix and study details into SQLite database\n', value = 0.9)
+      scProg$set(message = paste0(" Computing markers for the variable/s:", si_cell_col,"\n"), value = 0.7)
     }
-    message('Writing down the matrix and study details into SQLite database\n')
-    if(isTRUE(nrow(si_study)>0) & isTRUE(nrow(l[[1]])>0) & isTRUE(nrow(l[[2]])>0) ){
-      StudyName = paste0(my_assay,"_",si_study$Database)
-      si_study$Database = StudyName
-      if(length(grep("^scRNA_",db_address))==0){
-        db_address <- paste0("scRNA_",my_assay,"_",db_address)
+    si_cell_col = unlist(strsplit(as.character(si_cell_col),","))
+    if(si_compute_cellmarker==T & !is.null(si_cell_col)){
+      if(is.null(si_cell_col)) stop(" Column name/s of the variable against which markers are to be computed is not provided!\n")
+      if(sum(si_cell_col%in%names(so@meta.data))!=length(si_cell_col)){
+        cat(paste0(si_cell_col,collapse = ","),"\n")
+        cat(paste0(names(so@meta.data),collapse = ","),"\n")
+        cat(sum(si_cell_col%in%names(so@meta.data)),"  ",length(si_cell_col),"\n")
+        stop(' one or more marker column names are not present in the Seurat object\n')
       }
-      if(!is.null(OUTDIR)){
-        connSc <- RSQLite::dbConnect(RSQLite::SQLite(),paste0(OUTDIR,"/",db_address))
+      message(" Computing markers for the variable/s:", si_cell_col,"\n")
+      if(length(si_cell_col)>1){
+        message(' -> Note: multiple varialbes are provided for computing the markers. Will proceed!\n')
+      }
+      for(mycolm in si_cell_col){
+        message("  ..computing markers for the variable:", mycolm,"\n")
+        if(intractv==T){
+          scProg$set(message = paste0("  ..computing markers for the variable:", mycolm,"\n"), value = 0.75)
+        }
+        Idents(so) <- so@meta.data[[mycolm]]
+        plan("multicore", workers = MCORES)
+        my.markers <- tryCatch({FindAllMarkers(so,  
+                                               min.pct = 0.25, 
+                                               logfc.threshold = 0.25,
+                                               return.thresh = 0.1,
+                                               min.diff.pct = 0.25,
+                                               max.cells.per.ident = 500,
+                                               test.use = 'wilcox')
+        },error=function(e){
+          return(c())
+        })
+        if(!is.null(my.markers)){
+          if(ncol(my.markers)==7){
+            names(my.markers) <- c("P.Value", "logFC", "pct.1", "pct.2", 
+                                   "adj.P.Val", "Tag", "geneSymbol")
+            my.markers$Test <- paste0(my.markers$Tag,"-Rest")
+            my.markers$AveExpr <- NA
+            my.markers$t <- NA
+            my.markers$B <- NA
+            my.markers$Assay <- my_assay
+            my.markers$Method <- 'Wilcox'
+            my.markers <- my.markers[,c("logFC", "AveExpr", "t", 
+                                        "P.Value", "adj.P.Val", "B", "Test","Tag",
+                                        "geneSymbol",'Method','Assay',"pct.1","pct.2")]
+            si_cell_markers_tmp <- rbind(si_cell_markers_tmp,my.markers)
+          }
+        }
+        rm(my.markers)
+      }
+      rm(mycolm)
+    }else if(si_compute_cellmarker ==F & isTruthy(si_cell_markers)){
+      mycols <- c("logFC", "AveExpr", "t", "P.Value", "adj.P.Val", "B", "Test","Tag","geneSymbol")
+      cf <- NULL
+      ext <- tools::file_ext(si_cell_markers)
+      if(ext=='txt'){
+        cf = read.delim(si_cell_markers,as.is = T,colClasses = "#",sep="\t")
+      }else if(ext == 'csv'){
+        cf = read.csv2(si_cell_markers,as.is = T,colClasses = "#")
+      }
+      if(sum(mycols%in%names(cf))!=length(mycols)){
+        warning("One or more columns are missing in the provided cell marker file. Please ensure that correct file is provided. Skipping this file and moving on!")
       }else{
-        connSc <- RSQLite::dbConnect(RSQLite::SQLite(),paste0(db_address))
+        mycols <- append(mycols,
+                         names(cf)[!names(cf)%in%mycols]
+        )
+        si_cell_markers_tmp <- cf[,mycols]
       }
-      RSQLite::dbWriteTable(connSc,paste0(StudyName,"_study"),si_study,overwrite=T)
-      l[[2]] <- remove_dupcolumns(l[[2]])
-      RSQLite::dbWriteTable(connSc,paste0(StudyName,"_metaFeatures"),l[[2]],overwrite=T)
-      RSQLite::dbWriteTable(connSc,paste0(StudyName,"_data"),l[[1]],overwrite=T)
-      if(isTRUE(nrow(si_cell_markers_tmp)>0)){
-        si_cell_markers_tmp <- remove_dupcolumns(si_cell_markers_tmp)
-        RSQLite::dbWriteTable(connSc,paste0(StudyName,"_Marker"),si_cell_markers_tmp,overwrite=T)
-      }
-      if(isTRUE(nrow(si_disease_markers_tmp)>0)){
-        si_disease_markers_tmp <- remove_dupcolumns(si_disease_markers_tmp)
-        RSQLite::dbWriteTable(connSc,paste0(StudyName,"_DEG"),si_disease_markers_tmp,overwrite=T)
-      }
-      if(isTRUE(nrow(expn.summaryperfeature)>0)){
-        expn.summaryperfeature <- remove_dupcolumns(expn.summaryperfeature)
-        RSQLite::dbWriteTable(connSc,paste0(StudyName,"_FeatureSummary"),expn.summaryperfeature,overwrite=T)
-      }
-      if(isTRUE(length(signature.list)>0)){
-        signature.list[[1]] <- remove_dupcolumns(signature.list[[1]])
-        signature.list[[2]] <- remove_dupcolumns(signature.list[[2]])
-        RSQLite::dbWriteTable(connSc,paste0(StudyName,"_SignatureMatrix"),signature.list[[1]],overwrite=T)
-        RSQLite::dbWriteTable(connSc,paste0(StudyName,"_SignatureFile"),signature.list[[2]],overwrite=T)
-      }
-      RSQLite::dbListTables(connSc)
-      RSQLite::dbDisconnect(connSc)
+      rm(cf,ext)
     }
+    if(isTRUE(nrow(si_cell_markers_tmp)>0)){
+      writedb(tableName=paste0(StudyName,"_Marker"),datafrm=si_cell_markers_tmp,db_address=db_address,OUTDIR=OUTDIR,overwrite=T)
+    }
+    rm(si_cell_markers_tmp)
+    gc()
+    plan("sequential")
+
   }
   gc()
+
   if(intractv==T){
     scProg$set(message = "Done!", value = 1)
   }
+  message("Done!")
+  
   return(1)
 }
 
@@ -678,13 +750,13 @@ write.scstudy2.sqlitedb <- function(so,
   
   study <- data.frame(Database=ifelse(!is.null(StudyName),as.character(StudyName),NA),
                       Description=ifelse(!is.null(StudyDescr),as.character(StudyDescr),NA),
-                      SampleSize=ifelse(!is.null(Donors_VariableName),length(unique(so@meta.data[,Donors_VariableName])),NA),
+                      SampleSize=ifelse(!is.na(Donors_VariableName),length(unique(so@meta.data[,Donors_VariableName])),NA),
                       TISSUES=ifelse(!is.null(Tissue),as.character(Tissue),NA),
                       DISEASE=ifelse(!is.null(Disease),as.character(Disease),NA),
                       ORGANISM=ifelse(!is.null(Organism),as.character(Organism),NA),
                       SHORTDESCR=ifelse(!is.null(ShortDescr),as.character(ShortDescr),NA),
                       DISEASE_Variable=ifelse(!is.null(Disease_VariableName),as.character(Disease_VariableName),NA), 
-                      DONOR_Variable=ifelse(!is.null(Donors_VariableName),as.character(Donors_VariableName),NA), 
+                      DONOR_Variable=ifelse(!is.na(Donors_VariableName),as.character(Donors_VariableName),NA), 
                       PMID=ifelse(!is.null(PMID),as.character(PMID),NA),
                       GEO=ifelse(!is.null(GEO),as.character(GEO),NA),
                       STATUS=ifelse(!is.null(StudyStatus),as.character(StudyStatus),NA),
