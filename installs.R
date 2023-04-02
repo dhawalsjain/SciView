@@ -4,7 +4,7 @@ pckgs <- c("shiny","shinyjs","dashboardthemes","shinydashboard","shinycssloaders
            "shinyWidgets","shinyBS","shinyFiles","highcharter","ggvis",
            "rasterly","png","data.table","DT","pddExpn","optparse","gprofiler2",
            "heatmaply","RSQLite","DBI","shinyjqui","Seurat","reticulate","Matrix",
-           "SparseM","dplyr","BiocManager","future")
+           "SparseM","dplyr","BiocManager","future","reactable","sparkline")
 pckgs <- pckgs[!pckgs%in%installed.packages()]
 install.packages(pckgs,dependencies = T,verbose = T)
 
