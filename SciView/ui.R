@@ -32,8 +32,8 @@ shinyUI(
         titleWidth = "100%",
         title = shiny::HTML(
           "<div style = 'background-color:#ffffff;color: #6a51a3;font-size:30px;font-weight:bold; vertical-align:middle'>
-           <img src = 'logo.png' align = 'left'  height = '55px' width = '200px'>
-            Single cell interactive View(er) 
+           <img src = 'logo.jpg' align = 'left'  height = '55px' width = '200px'>
+            Single cell interactive View(er): Data Visualization
            </div>")
       ),
 

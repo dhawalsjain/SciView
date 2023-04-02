@@ -8,20 +8,49 @@ observeEvent(c(compvariables$geneExpSummarized),{
   if(isTRUE(nrow(compvariables$geneExpSummarized)>0)){
     ## data table
     cat(" displaying summary expression table across all available studies for gene ",compvariables$gene,'\n')
-    output$comparativeExpnTable <- DT::renderDataTable({
-      pf <- compvariables$geneExpSummarized
-      pf$AveExpr <- round(pf$AveExpr,2)
-      pf <- pf[order(pf$AveExpr,decreasing = T),
-               ]
-      datatable(pf,rownames = F,extensions = 'Buttons',
-                options = list(searching = TRUE,pageLength = 10,dom = 'Bfrtip', 
-                               buttons = list(list(extend = 'csv',  filename = paste0("ExpressionComparison_",compvariables$gene)),
-                                              list(extend ='excel', filename = paste0("ExpressionComparison_",compvariables$gene))), 
-                               scrollX = TRUE,scrollCollapse = TRUE)) %>% 
-        formatStyle('AveExpr',
-                    background = styleColorBar(range(pf$AveExpr,na.rm=T), 'lightblue'),
-                    backgroundRepeat = 'no-repeat',backgroundPosition = 'left')
+    
+    output$comparativeExpnTable <- reactable::renderReactable({
+      myfun01 <- function(x){ log2(median(x,na.rm=T)+1) }
+      qf <- compvariables$geneExp %>%
+        dplyr::group_by(cell_type,feature,Database) %>%
+        dplyr::summarize(MedExpr=myfun01(norm_avg_priorLT),expression_values = list(norm_avg_priorLT)) %>%
+        mutate(boxplot = NA)
+      qf$expression_values <- lapply(qf$expression_values, function(i){
+        x <- ifelse(length(i)==1,paste0(rep(i,2),collapse = " "),paste0(i,collapse = " "))
+        as.numeric(unlist(strsplit(x," ")))
+      })
+      reactable::reactable(qf, 
+                defaultPageSize = 20,
+                bordered = TRUE,
+                defaultColDef = colDef(footerStyle = list(fontWeight = "italic",color='#41ab5d')),
+                columns = list(
+                  cell_type = colDef(filterable = T,searchable = T,sortable = T,resizable = T, footer = 'Cell type as annotated by author'),
+                  feature = colDef(filterable = T,searchable = T,sortable = T,resizable = T,footer = "Gene name, as provided in the study"),
+                  Database = colDef(filterable = T,searchable = T,sortable = T,resizable = T),
+                  MedExpr = colDef(format = colFormat(digits = 2),footer = "Normalized median Expression Across donors",resizable = T),
+                  expression_values = colDef(cell = function(values) {
+                    sparkline(values, type = "bar", chartRangeMin = min(unlist(qf$expression_values)), chartRangeMax = max(unlist(qf$expression_values)))
+                  },footer = 'Normalized expression per donor',resizable = T),
+                  boxplot = colDef(cell = function(value, index) {
+                    sparkline(qf$expression_values[[index]], type = "box")
+                  },sortable = T,resizable = T,footer = 'Distribution of expression values')
+                )
+      )
     })
+    
+    #output$comparativeExpnTable <- DT::renderDataTable({
+    #  pf <- compvariables$geneExpSummarized
+    #  pf$AveExpr <- round(pf$AveExpr,2)
+    #  pf <- pf[order(pf$AveExpr,decreasing = T),]
+    #  datatable(pf,rownames = F,extensions = 'Buttons',
+    #            options = list(searching = TRUE,pageLength = 10,dom = 'Bfrtip', 
+    #                           buttons = list(list(extend = 'csv',  filename = paste0("ExpressionComparison_",compvariables$gene)),
+    #                                          list(extend ='excel', filename = paste0("ExpressionComparison_",compvariables$gene))), 
+    #                           scrollX = TRUE,scrollCollapse = TRUE)) %>% 
+    #    formatStyle('AveExpr',
+    #                background = styleColorBar(range(pf$AveExpr,na.rm=T), 'lightblue'),
+    #                backgroundRepeat = 'no-repeat',backgroundPosition = 'left')
+    #})
   }
 })
 

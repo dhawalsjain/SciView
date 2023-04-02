@@ -190,7 +190,7 @@ if(T){
     gg <- variables$availGenes
     for(f in input$sel_gene){
       gAlias[[f]] <- unique(c(f,gg[gg$Name==f,]$geneSymbol[1]))
-      #cat("Gene Alias:",f,": ",paste0(gAlias[[f]]),"\n")
+      cat("Gene Alias:",f,": ",paste0(gAlias[[f]],collapse = ","),"\n")
     }
     gAlias
   })
@@ -305,18 +305,25 @@ observeEvent(c(variables$gene),{
     
     cf <- local({
       cf <- c()
-      for(mygene in variables$gene){
-        query <- paste0("SELECT * FROM ",variables$sc_study,"_Marker WHERE geneSymbol = '",mygene,"'")
-        scProg$set(message = paste0("querying gene marker: ",mygene), value = 0.5)
-        cat("querying gene marker: ",mygene,"\n")
-        pl <- tryCatch({
-          queryDB(HANDLER=VARS$connList[[variables$connID_1]], 
-                  QUERY=query,REPO_NAME=REPO_NAME,
-                  USE_REMOTE_DB=USE_REMOTE_DB)
-        },error=function(e){
-          c()
-        })
-        cf <- rbind(cf,pl)
+      for(g in variables$gene){
+        pl <- c()
+        cntr=1
+        scProg$set(message = paste0("querying gene for celltype marker: ",g), value = 0.5)
+        cat("querying gene for celltype marker: ",g,"\n")
+        while(cntr<=length(gAlias()[[g]]) && !isTRUE(nrow(pl)>0)){
+          pl <- tryCatch({
+            query <- paste0("SELECT * FROM ",variables$sc_study,"_Marker WHERE geneSymbol = '",gAlias()[[g]][cntr],"'")
+            queryDB(HANDLER=VARS$connList[[variables$connID_1]], 
+                    QUERY=query,REPO_NAME=REPO_NAME,
+                    USE_REMOTE_DB=USE_REMOTE_DB)
+          },error=function(e){
+            NULL
+          })
+          cntr = cntr + 1
+        }
+        if(isTRUE(nrow(pl)>0)){
+          cf <- rbind(cf,pl)
+        }
         rm(pl)
       }
       cf
@@ -324,7 +331,6 @@ observeEvent(c(variables$gene),{
     if(isTRUE(nrow(cf)>0)){
       scProg$set(message = paste0("marker dataframe for ", variables$gene," has ",unique(cf$Test)," unique tests"), value = 0.7)
       cat("marker dataframe for ", variables$gene," has ",unique(cf$Test)," unique tests","\n")
-      cf$Test <- paste0(cf$Test,"\n(",cf$geneSymbol,")")
       variables$marker_geneDf <- cf
     }
     rm(cf)
@@ -367,16 +373,23 @@ observeEvent(c(input$sel_markercelltype),{
   }
 })
 
-observeEvent(c(input$marker_tab_rows_selected),{
+observeEvent(c(input$marker_tab_rows_selected,input$sel_markerfdrslider,input$sel_markercomp),{
   if(isTruthy(input$marker_tab_rows_selected) & isTruthy(variables$marker_cellTypeDf) &
-     isTruthy(variables$sc_study) & isTruthy(variables$sc_louvain)){
+     isTruthy(variables$sc_study) & isTruthy(variables$sc_louvain) &
+     isTruthy(input$sel_markercomp) & isTruthy(input$sel_markerfdrslider)){
     
     scProg <- shiny::Progress$new()
     on.exit(scProg$close())
     scProg$set(message = paste0("extracting expression values for selected marker genes from the table"), value = 0)
     cat("extracting expression values for selected marker genes from the table\n")
+    cat("  ..row index: ",input$marker_tab_rows_selected,"\n")
     
-    ID = variables$marker_cellTypeDf[input$marker_tab_rows_selected,]$geneSymbol %>%
+    cf <- variables$marker_cellTypeDf
+    cf <- cf[as.numeric(cf$adj.P.Val) <= as.numeric(input$sel_markerfdrslider),]
+    cf <- cf[cf$Test==input$sel_markercomp,]
+    cf <- cf[order(cf$adj.P.Val),]
+    
+    ID = cf[input$marker_tab_rows_selected,]$geneSymbol %>%
       as.character()
     scProg$set(message = paste0("marker gene/s ",ID), value = 0.2)
     cat("marker gene/s ",ID,"...\n")
@@ -440,13 +453,14 @@ observeEvent(c(input$sc_markeropgo),{
         if(length(qf)>2){
           qf = list(A=qf)
           names(qf) <- 'Upregulated (wrt rest cells)'
-          XX = gprofiler2::gost(query = qf[1],organism =  'hsapiens',#ORGANISM[[variables$sc_study[,"ORGANISM"]]],
+          XX = gprofiler2::gost(query = qf[1],organism =  ORGANISM[[variables$sc_study_params[,"ORGANISM"]]],
                            ordered_query = F,exclude_iea = T,
                            significant = F,user_threshold = 0.05,correction_method = 'g_SCS')
           XX[['info']]  <-     shiny::HTML("<u><b>Celltype: </b>",input$sel_markercelltype,"       
                  <b>Comparison: </b>",input$sel_markercomp,"   
                  <b>FDR: </b>",input$sel_markerfdrslider,"            
                  <b>Direction of change: </b>Over-expressed </u><br>")
+          cat(" XX names:" ,paste0(names(XX),collapse = ","),"\n")
           XX
         }else{ NULL }
       })
@@ -459,7 +473,7 @@ observeEvent(c(input$sc_markeropgo),{
         if(length(qf)>2){
           qf = list(A=qf)
           names(qf) <- 'Downregulated (wrt rest cells)'
-          XX <- gprofiler2::gost(query = qf[1],organism = 'hsapiens',#ORGANISM[[variables$sc_study[,"ORGANISM"]]],#
+          XX <- gprofiler2::gost(query = qf[1],organism = ORGANISM[[variables$sc_study_params[,"ORGANISM"]]],#ORGANISM[[variables$sc_study[,"ORGANISM"]]],#
                            ordered_query = F,exclude_iea = T,
                            significant = F,user_threshold = 0.05,correction_method = 'g_SCS')
           XX[['info']]  <-     shiny::HTML("<u><b>Celltype: </b>",input$sel_markercelltype,"       
@@ -493,26 +507,34 @@ observeEvent(c(variables$gene),{
     
     cf <- local({
       cf <- c()
-      for(mygene in variables$gene){
-        query <- paste0("SELECT * FROM ",variables$sc_study,"_DEG WHERE geneSymbol = '",mygene,"'")
-        scProg$set(message = paste0("querying gene marker: ",mygene), value = 0.5)
-        cat("querying gene bioloical marker: ",mygene,"\n")
-        pl <- tryCatch({
-          queryDB(HANDLER=VARS$connList[[variables$connID_1]], 
-                  QUERY=query,REPO_NAME=REPO_NAME,
-                  USE_REMOTE_DB=USE_REMOTE_DB)
-        },error=function(e){
-          c()
-        })
-        cf <- rbind(cf,pl)
+      for(g in variables$gene){
+        pl <- c()
+        cntr=1
+        scProg$set(message = paste0("querying gene for biological marker: ",g), value = 0.5)
+        cat("querying gene for bioloical marker: ",g,"\n")
+        while(cntr<=length(gAlias()[[g]]) && !isTRUE(nrow(pl)>0)){
+          pl <- tryCatch({
+            query <- paste0("SELECT * FROM ",variables$sc_study,"_DEG WHERE geneSymbol = '",gAlias()[[g]][cntr],"'")
+            queryDB(HANDLER=VARS$connList[[variables$connID_1]], 
+                    QUERY=query,REPO_NAME=REPO_NAME,
+                    USE_REMOTE_DB=USE_REMOTE_DB)
+          },error=function(e){
+            NULL
+          })
+          cntr = cntr+1
+        }
+        if(isTRUE(nrow(pl)>0)){
+          cf <- rbind(cf,pl)
+        }
         rm(pl)
       }
       cf
     })
+    
     if(isTRUE(nrow(cf)>0)){
       scProg$set(message = paste0("biological marker dataframe for ", variables$gene," has ",unique(cf$Test)," unique tests"), value = 0.7)
       cat("biological marker dataframe for ", variables$gene," has ",unique(cf$Test)," unique tests","\n")
-      cf$Test <- paste0(cf$Test,"\n(",cf$geneSymbol,")")
+      #cf$Test <- paste0(cf$Test,"\n(",cf$geneSymbol,")")
       variables$de_geneDf <- cf
     }
     rm(cf)
@@ -563,8 +585,14 @@ observeEvent(c(input$de_tab_rows_selected),{
     on.exit(scProg$close())
     scProg$set(message = paste0("extracting expression values for selected biological marker genes from the table"), value = 0)
     cat("extracting expression values for selected biological marker genes from the table\n")
+    cat(" .. row index: ",input$de_tab_rows_selected,"\n")
     
-    ID = variables$de_cellTypeDf[input$de_tab_rows_selected,]$geneSymbol %>%
+    cf <- variables$de_cellTypeDf
+    cf <- cf[as.numeric(cf$adj.P.Val) <= as.numeric(input$sel_defdrslider),]
+    cf <- cf[cf$Test==input$sel_decomp,]
+    cf <- cf[order(cf$adj.P.Val),]
+    
+    ID = cf[input$de_tab_rows_selected,]$geneSymbol %>%
       as.character()
     scProg$set(message = paste0("marker gene/s ",ID), value = 0.2)
     cat("marker gene/s ",ID,"...\n")
@@ -604,7 +632,7 @@ observeEvent(c(input$de_tab_rows_selected),{
 })
 
 observeEvent(c(input$sc_deopgo),{
-  if(isTruthy(input$sc_deopgo) & isTruthy(variables$sc_study) & 
+  if(isTruthy(input$sc_deopgo) & isTruthy(variables$sc_study_params) & 
      isTruthy(input$sel_decelltype) &  isTRUE(nrow(variables$de_cellTypeDf)>0) & 
      isTruthy(input$sel_defdrslider) & isTruthy(input$sel_decomp)){
     
@@ -613,10 +641,12 @@ observeEvent(c(input$sc_deopgo),{
     scProg$set(message = paste0("computing enrichment of the biological marker genes"), value = 0)
     cat("computing enrichment of the biological marker genes\n")
     
-    variables$cellde_upenrich = list()
-    variables$cellde_dnenrich = list()
     pl <- variables$de_cellTypeDf 
     pl <- pl[pl$Test==input$sel_decomp,]
+    
+    variables$cellde_upenrich = list()
+    variables$cellde_dnenrich = list()
+    
     ## Enrichment
     if(isTRUE(nrow(pl)>0)){
       variables$cellde_upenrich <- local({
@@ -626,7 +656,7 @@ observeEvent(c(input$sc_deopgo),{
         if(length(qf)>2){
           qf = list(A=qf)
           names(qf) <- 'Upregulated (wrt rest cells)'
-          XX = gprofiler2::gost(query = qf[1],organism = ORGANISM[[variables$sc_study[,"ORGANISM"]]],#'hsapiens',#
+          XX = gprofiler2::gost(query = qf[1],organism = ORGANISM[[variables$sc_study_params[,"ORGANISM"]]],#'hsapiens',#
                                 ordered_query = F,exclude_iea = T,
                                 significant = F,user_threshold = 0.05,correction_method = 'g_SCS')
           XX[['info']]  <-     shiny::HTML("<u><b>Celltype: </b>",input$sel_decelltype,"       
@@ -638,14 +668,16 @@ observeEvent(c(input$sc_deopgo),{
       })
       scProg$set(message = paste0("calculated enrichment for upregulated genes"), value = 0.5)
       cat("calculated enrichment for upregulated genes\n")
+      
       variables$cellde_dnenrich <- local({
         qf <-  pl
         qf <- qf[as.numeric(qf$adj.P.Val) <= as.numeric(input$sel_defdrslider) & qf$logFC < 0,]$geneSymbol
         qf <- unique(qf)
+        #cat("... organism:",ORGANISM[[variables$sc_study_params[,"ORGANISM"]]],"\n")
         if(length(qf)>2){
           qf = list(A=qf)
           names(qf) <- 'Downregulated (wrt rest cells)'
-          XX <- gprofiler2::gost(query = qf[1],organism = ORGANISM[[variables$sc_study[,"ORGANISM"]]], #'hsapiens',#
+          XX <- gprofiler2::gost(query = qf[1],organism = ORGANISM[[variables$sc_study_params[,"ORGANISM"]]], #'hsapiens',#
                                  ordered_query = F,exclude_iea = T,
                                  significant = F,user_threshold = 0.05,correction_method = 'g_SCS')
           XX[['info']]  <-     shiny::HTML("<u><b>Celltype: </b>",input$sel_decelltype,"       
@@ -653,10 +685,11 @@ observeEvent(c(input$sc_deopgo),{
                  <b>FDR: </b>",input$sel_defdrslider,"            
                  <b>Direction of change: </b>Under-expressed </u><br>")
           XX
-        }else{ NULL }
+        }else{ list() }
       })
       scProg$set(message = paste0("calculated enrichment for downregulated genes"), value = 0.9)
       cat("calculated enrichment for downregulated genes\n")
+      
       gc()
       scProg$set(message = "done..", value = 1)
     }
@@ -670,8 +703,12 @@ observeEvent(c(input$sc_deopgo),{
 observeEvent(c(input$sel_genexgo),{
   if(input$AppTab=='compare' & isTruthy(input$sel_genexgo) & 
      isTruthy(input$sel_genex) & isTruthy(VARS$sc_studies)){
-    cat(" extracting data for the gene",input$sel_genex," across studies\n")
     
+    scProg <- shiny::Progress$new()
+    on.exit(scProg$close())
+    scProg$set(message = paste0("extracting expression of ",input$sel_genex,"across studies"), value = 0)
+    message(paste0("extracting expression of ",input$sel_genex,"across studies\n"))
+
     compvariables$gene = input$sel_genex
     compvariables$geneExp = c()
     compvariables$geneMarker = c()
@@ -688,17 +725,9 @@ observeEvent(c(input$sel_genexgo),{
       gAliasX <- split(gg$geneSymbol,f = gg$species)
       gAliasX
     })
-    if(F){
-      gAliasX <- local({
-        query <- paste0("SELECT * FROM gAliasProtein WHERE geneSymbol = '",compvariables$gene,"'")
-        gGenes <- RSQLite::dbGetQuery(VARS$connGenes, query)
-        hgnc <- gGenes$HGNC %>% as.character()
-        gg <- as.character(gGenes[gGenes$HGNC%in%hgnc,]$geneSymbol)
-        gAliasX <- list()
-        gAliasX[[compvariables$gene]] <- unique(c(compvariables$gene,gg))
-        gAliasX
-      })
-    }
+    scProg$set(message = paste0(" .. retrieved gene aliases"), value = 0.1)
+    message(paste0(" ..retrieved gene aliases\n"))
+    
     for(i in 1:nrow(VARS$sc_studies)){
       pl <- NULL
       ql <- NULL
@@ -708,19 +737,31 @@ observeEvent(c(input$sel_genexgo),{
       cat(" extracting data for the gene",compvariables$gene," in ",cf$Database,"\n")
       gAliasXs <- gAliasX[cf$ORGANISM]
       if(length(gAliasXs)>0){
-        while(cntr<=length(gAliasXs[[1]]) && !isTRUE(nrow(pl)>0)){
+        while(cntr<=length(gAliasXs[[1]]) && !isTRUE(nrow(pl)>0)){ ##1 because we are only querying one gene; no multiple genes 
           cat("  gene/alias name: ", gAliasXs[[1]][cntr],"\n")
           ##-- 01) Expression
+          scProg$set(message = paste0(" .. retrieving expression from ",cf$Database), value = i/nrow(VARS$sc_studies))
+          message(paste0(" .. retrieving expression from ",cf$Database,"\n"))
           pl <- local({
-            query <- paste0("SELECT * FROM ",as.character(cf$Database),"_FeatureSummary WHERE feature = '",gAliasXs[[1]][cntr],"'")
             tryCatch({
-              queryDB(HANDLER=VARS$connList[[as.character(cf$ObjID)]], 
+              query <- paste0("SELECT * FROM ",as.character(cf$Database),"_FeatureSummaryKeys")
+              x <- queryDB(HANDLER=VARS$connList[[as.character(cf$ObjID)]], 
                       QUERY=query,REPO_NAME=REPO_NAME,
                       USE_REMOTE_DB=USE_REMOTE_DB)
+              query <- paste0("SELECT * FROM ",as.character(cf$Database),"_FeatureSummary WHERE feature = '",gAliasXs[[1]][cntr],"'")
+              y <- queryDB(HANDLER=VARS$connList[[as.character(cf$ObjID)]], 
+                      QUERY=query,REPO_NAME=REPO_NAME,
+                      USE_REMOTE_DB=USE_REMOTE_DB)
+              x$norm_avg_priorLT <- unname(unlist(y[,2:ncol(y)]))
+              x$feature <- unname(unlist(unique(y[1,1])))
+              message(paste0(names(x),collapse = ","))
+              x
             },error=function(e){ NULL
             })
           })
           ##-- 02) Marker
+          scProg$set(message = paste0(" .. retrieving marker from ",cf$Database), value = i/nrow(VARS$sc_studies))
+          message(paste0(" .. retrieving marker from ",cf$Database,"\n"))
           gl <- local({
             query <- paste0("SELECT * FROM ",as.character(cf$Database),"_Marker WHERE geneSymbol = '",gAliasXs[[1]][cntr],"'")
             tryCatch({
@@ -731,6 +772,8 @@ observeEvent(c(input$sel_genexgo),{
             })
           })
           ##-- 03) BioMarker
+          scProg$set(message = paste0(" .. retrieving disease marker from ",cf$Database), value = i/nrow(VARS$sc_studies))
+          message(paste0(" .. retrieving disease marker from ",cf$Database,"\n"))
           ql <- local({
             query <- paste0("SELECT * FROM ",as.character(cf$Database),"_DEG WHERE geneSymbol = '",gAliasXs[[1]][cntr],"'")
             tryCatch({
@@ -744,7 +787,6 @@ observeEvent(c(input$sel_genexgo),{
           cntr = cntr +1 
         }
       }
-      
       if(isTRUE(nrow(pl)>0)){
         pl$Database <- as.character(cf$Database)
         compvariables$geneExp <- rbind(compvariables$geneExp, pl)
@@ -765,12 +807,14 @@ observeEvent(c(input$sel_genexgo),{
     }
     
     ## summarized table
-    myfun01 <- function(x){ log2(mean(2^x,na.rm=T)) }
+    myfun01 <- function(x){ log2(mean(x,na.rm=T)+1) }
     compvariables$geneExpSummarized <- ({
       compvariables$geneExp %>%
         dplyr::group_by(cell_type,feature,Database) %>%
         dplyr::summarize(AveExpr=myfun01(norm_avg_priorLT))
     })
+    scProg$set(message = paste0(" .. done!"), value = 1)
+    
 
     
   }

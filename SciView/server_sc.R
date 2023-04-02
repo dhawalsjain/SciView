@@ -10,18 +10,34 @@ observe({
   updateSelectizeInput(session, 'sel_decelltype',choices = variables$availcelltypes,
                        server = TRUE,selected =NULL)
 })
+
 observe({
   updateSelectizeInput(session, 'sel_decomp',
                        choices = variables$avail_deTests, #variables$sel_catvar
                        selected =NULL,server=TRUE)
 })
-observeEvent(c(input$sel_genego),{
-  if(isTruthy(variables$gene) & isTruthy(input$sel_genego) & isTRUE(nrow(variables$de_geneDf)>0)){
+observe({
+  updateSelectizeInput(session, 'sel_detags',
+                       choices = unique(variables$de_geneDf[,'Tag']), #variables$sel_catvar
+                       selected =NULL,server=TRUE)
+})
+
+
+observeEvent(c(variables$de_geneDf,input$sel_detags),{
+  if(isTruthy(variables$gene) & isTRUE(nrow(variables$de_geneDf)>0) & isTruthy(input$sel_detags)){
+    
     cat(" preparing the marker dotplot\n")
     output$sc_dedotplot <- renderUI({ 
       output$tempj <- renderPlotly({
-        sc_dge_dotplot(variables$de_geneDf,x='geneSymbol',y='Test',
-                       colCol='logFC',sizeCol='adj.P.Val',testCol='Test',configlayout=T)
+        mydf <- variables$de_geneDf
+        mydf <- mydf[mydf$Tag%in%input$sel_detags,]
+        mydf$Test <- paste0(strtrim(mydf$Test,width = 58),"..")
+        if(isTRUE(nrow(mydf)>0)){
+        sc_dge_dotplot(mydf,x='geneSymbol',y='Test',
+                       colCol='logFC',sizeCol='adj.P.Val',testCol='Test',configlayout=F)
+        }else{
+          empty_plot("information unavailable")
+        }
       })
       plotlyOutput("tempj")
     })
@@ -47,12 +63,27 @@ observeEvent(c(variables$de_cellTypeDf,input$sel_defdrslider,input$sel_decomp),{
       cf <- variables$de_cellTypeDf
       cf <- cf[as.numeric(cf$adj.P.Val) <= as.numeric(input$sel_defdrslider),]
       cf <- cf[cf$Test==input$sel_decomp,]
+      cf <- cf[order(cf$adj.P.Val),]
+      
+      cf$Alias <- tryCatch({
+        m <- variables$availGenes
+        m <- m[match(cf$geneSymbol,m$geneSymbol),]
+        m <- data.table(m)
+        m <- m[, lapply(.SD, function(x) paste0(x,collapse = ",")), by=list(geneSymbol) ]
+        m <- m[,c('Name',"geneSymbol")] %>% unique() %>% as.data.frame()
+        if(nrow(m)==nrow(cf)){
+          m$Name
+        }else{
+          NA
+        }
+      },error=function(e){NA})
+
       if(nrow(cf)>0){
         cf$logFC = round(cf$logFC,2)
         cf$AveExpr = round(cf$AveExpr,2)
         cf$t = round(cf$t,2)
         cf$B = round(cf$B,2)
-        cf <- cf[,c("geneSymbol","logFC", "adj.P.Val", "Test")]
+        cf <- cf[,c("geneSymbol","Alias","logFC", "adj.P.Val")]
         datatable(cf,rownames = F,extensions = 'Buttons',
                   options = list(searching = TRUE,pageLength = 5,dom = 'Bfrtip', 
                                  buttons = list(list(extend = 'csv',  filename = paste0("BioMarkers_FDR_",input$sel_defdrslider,"_",variables$sc_study,"_",input$sel_decelltype,"")),
@@ -109,49 +140,58 @@ observeEvent(c(variables$expndf_de),{
   }
 })
 
-observeEvent(c(variables$cellde_upenrich,variables$cellde_dnenrich, 
-               input$sc_deopgo,input$sel_dedirchange),{
-                 if(input$AppTab=='scstudy' & isTruthy(variables$cellde_upenrich) & isTruthy(input$sel_dedirchange) &
-                    isTruthy(variables$cellde_dnenrich) & isTruthy(input$sel_dedirchange)){
+observeEvent(c(variables$cellde_upenrich,variables$cellde_dnenrich,input$sel_dedirchange),{
+  if(input$AppTab=='scstudy' & isTruthy(variables$cellde_upenrich) &
+     isTruthy(variables$cellde_dnenrich) & isTruthy(input$sel_dedirchange)){
+    
+    scProg <- shiny::Progress$new()
+    on.exit(scProg$close())
+    scProg$set(message = paste0("displaying biological marker gene enrichment plot"), value = 0)
+    cat("displaying biological marker gene enrichment plot\n")
+    
+    rr1 <- variables$cellde_upenrich
+    if(input$sel_dedirchange==2){
+      rr1 <- variables$cellde_dnenrich
+    }
+    cat(" rr1 names: ",paste0(names(rr1),collapse = ";"),"\n")
+    
+    output$enrichde_plot <- renderUI({ 
+      if(isTruthy(length(rr1)>0)){
+        output$ewascjyxy <- renderPlotly({
+          gostplot(gostres = rr1,capped = T,interactive = T)
+        })
+        plotlyOutput("ewascjyxy")
+      }else{
+        renderPlotly({empty_plot("information unavailable")})
+      }  
+    })
+    output$enrichde_tab <- DT::renderDataTable({ 
+      if(isTruthy(length(rr1)>0)){
+        rr1[[1]] %>%
+          select(c("source","term_id" ,"term_name","term_size", "intersection_size","p_value")) %>%
+          filter(intersection_size>1 & p_value<0.05) %>%
+          arrange(p_value) %>%
+          datatable(rownames = F,extensions = 'Buttons',
+                    options = list(searching = TRUE,pageLength = 10,dom = 'Bfrtip', 
+                                   buttons = list(list(extend = 'csv',  filename = paste0("Enrichments_FDR")),
+                                                  list(extend ='excel', filename = paste0("Enrichments_FDR"))), 
+                                   scrollX = TRUE,scrollCollapse = TRUE)) %>% 
+          formatSignif(columns = c('p_value'),digits = 2)
+      }else{ 
+        DT::renderDataTable({}) 
+      }  
+    })
+    output$deEnrichmentText <- renderText({ rr1[['info']] })
+    
+    scProg$set(message = "done..", value = 1)
+  }
+})
+
+    
                    
-                   scProg <- shiny::Progress$new()
-                   on.exit(scProg$close())
-                   scProg$set(message = paste0("displaying biological marker gene enrichment plot"), value = 0)
-                   cat("displaying biological marker gene enrichment plot\n")
                    
-                   rr1 <- reactive({ variables$cellde_upenrich})
-                   if(input$sel_dedirchange==2){
-                     rr1 <- reactive({ variables$cellde_dnenrich})
-                   }
                    
-                   output$enrichde_plot <- renderUI({ 
-                     if(isTruthy(rr1())){
-                       output$ewascjyxy <- renderPlotly({
-                         gostplot(gostres = rr1(),capped = T,interactive = T)
-                       })
-                       plotlyOutput("ewascjyxy")
-                     }else{
-                       renderPlotly({empty_plot("information unavailable")})
-                     }  
-                   })
-                   output$enrichde_tab <- DT::renderDataTable({ 
-                     if(isTruthy(rr1())){
-                       rr1()[[1]] %>%
-                         select(c("source","term_id" ,"term_name","term_size", "intersection_size","p_value")) %>%
-                         filter(intersection_size>1 & p_value<0.05) %>%
-                         arrange(p_value) %>%
-                         datatable(rownames = F,extensions = 'Buttons',
-                                   options = list(searching = TRUE,pageLength = 10,dom = 'Bfrtip', 
-                                                  buttons = list(list(extend = 'csv',  filename = paste0("Enrichments_FDR")),
-                                                                 list(extend ='excel', filename = paste0("Enrichments_FDR"))), 
-                                                  scrollX = TRUE,scrollCollapse = TRUE)) %>% 
-                         formatSignif(columns = c('p_value'),digits = 2)
-                     }else{ DT::renderDataTable({}) }  
-                   })
-                   output$deEnrichmentText <- renderText({ rr1()[['info']] })
-                   scProg$set(message = "done..", value = 1)
-                 }
-               })
+    
 
 
 ##--------------------------------------------------------------
@@ -169,13 +209,13 @@ observe({
                        choices = variables$avail_markerTests, #variables$sel_catvar
                        selected =NULL,server=TRUE)
 })
-observeEvent(c(input$sel_genego),{
-    if(isTruthy(variables$gene) & isTruthy(input$sel_genego) & isTRUE(nrow(variables$marker_geneDf)>0)){
+observeEvent(c(variables$marker_geneDf),{
+    if(isTruthy(variables$gene) & isTRUE(nrow(variables$marker_geneDf)>0)){
       cat(" preparing the marker dotplot\n")
       output$sc_markerdotplot <- renderUI({ 
         output$tempe <- renderPlotly({
           sc_dge_dotplot(variables$marker_geneDf,x='geneSymbol',y='Test',
-                         colCol='logFC',sizeCol='adj.P.Val',testCol='Test',configlayout=T)
+                         colCol='logFC',sizeCol='adj.P.Val',testCol='Test',configlayout=F)
         })
         plotlyOutput("tempe")
       })
@@ -201,12 +241,27 @@ observeEvent(c(variables$marker_cellTypeDf,input$sel_markerfdrslider,input$sel_m
       cf <- variables$marker_cellTypeDf
       cf <- cf[as.numeric(cf$adj.P.Val) <= as.numeric(input$sel_markerfdrslider),]
       cf <- cf[cf$Test==input$sel_markercomp,]
+      cf <- cf[order(cf$adj.P.Val),]
+      
+      cf$Alias <- tryCatch({
+        m <- variables$availGenes
+        m <- m[match(cf$geneSymbol,m$geneSymbol),]
+        m <- data.table(m)
+        m <- m[, lapply(.SD, function(x) paste0(x,collapse = ",")), by=list(geneSymbol) ]
+        m <- m[,c('Name',"geneSymbol")] %>% unique() %>% as.data.frame()
+        if(nrow(m)==nrow(cf)){
+          m$Name
+        }else{
+          NA
+        }
+      },error=function(e){NA})
+      
       if(nrow(cf)>0){
         cf$logFC = round(cf$logFC,2)
         cf$AveExpr = round(cf$AveExpr,2)
         cf$t = round(cf$t,2)
         cf$B = round(cf$B,2)
-        cf <- cf[,c("geneSymbol","logFC", "adj.P.Val", "Test")]
+        cf <- cf[,c("geneSymbol","Alias","logFC", "adj.P.Val")]
         datatable(cf,rownames = F,extensions = 'Buttons',
                   options = list(searching = TRUE,pageLength = 5,dom = 'Bfrtip', 
                                  buttons = list(list(extend = 'csv',  filename = paste0("Markers_FDR_",input$sel_markerfdrslider,"_",variables$sc_study,"_",input$sel_markercelltype,"")),
@@ -273,15 +328,15 @@ observeEvent(c(variables$cellmark_upenrich,variables$cellmark_dnenrich,
       scProg$set(message = paste0("displaying marker gene enrichment plot"), value = 0)
       cat("displaying marker gene enrichment plot\n")
       
-      rr1 <- reactive({ variables$cellmark_upenrich})
-      if(input$sel_markerdirchange==2){
-        rr1 <- reactive({ variables$cellmark_dnenrich})
+      rr1 <- variables$cellde_upenrich
+      if(input$sel_dedirchange==2){
+        rr1 <- variables$cellde_dnenrich
       }
       
       output$enrichmarkers_plot <- renderUI({ 
-        if(isTruthy(rr1())){
+        if(isTruthy(length(rr1)>0)){
           output$ewascjyx <- renderPlotly({
-            gostplot(gostres = rr1(),capped = T,interactive = T)
+            gostplot(gostres = rr1,capped = T,interactive = T)
           })
           plotlyOutput("ewascjyx")
         }else{
@@ -289,8 +344,8 @@ observeEvent(c(variables$cellmark_upenrich,variables$cellmark_dnenrich,
         }  
       })
       output$enrichmarker_tab <- DT::renderDataTable({ 
-        if(isTruthy(rr1())){
-          rr1()[[1]] %>%
+        if(isTruthy(length(rr1)>0)){
+          rr1[[1]] %>%
             select(c("source","term_id" ,"term_name","term_size", "intersection_size","p_value")) %>%
             filter(intersection_size>1 & p_value<0.05) %>%
             arrange(p_value) %>%
@@ -300,9 +355,11 @@ observeEvent(c(variables$cellmark_upenrich,variables$cellmark_dnenrich,
                                                     list(extend ='excel', filename = paste0("Enrichments_FDR"))), 
                                      scrollX = TRUE,scrollCollapse = TRUE)) %>% 
             formatSignif(columns = c('p_value'),digits = 2)
-        }else{ DT::renderDataTable({}) }  
+        }else{ 
+          DT::renderDataTable({}) 
+        }  
       })
-      output$markerEnrichmentText <- renderText({ rr1()[['info']] })
+      output$markerEnrichmentText <- renderText({ rr1[['info']] })
       scProg$set(message = "done..", value = 1)
     }
   })
@@ -330,6 +387,10 @@ observe({
   updateSelectizeInput(session, 'sc_corrgeney',
                        choices = colnames(variables$expndf), #variables$sel_catvar
                        selected =NULL,server=TRUE)
+  updateSelectizeInput(session, 'sc_fbe',
+                       choices = colnames(variables$expndf), #variables$sel_catvar
+                       selected =NULL,server=TRUE)
+  
 })
 
  ## multigene raster
@@ -414,17 +475,34 @@ observeEvent(c(variables$expndf,input$sc_corrcelltypego),{
       z <- as.matrix(z)
       z[is.na(z)] <- 0
       z <- cbind(celltype=variables$sc_louvain[,variables$celltype],as.data.frame(z))
-      z <-  z[rowSums(is.na(z[,-1]))!=(ncol(z)-1),]
       if(isTruthy(input$sc_corrcelltype)){
         z <- z[z[,1]%in%input$sc_corrcelltype,]
       }
       output$sc_corrplot <- renderUI({ 
+        z <-  z[rowSums(is.na(z[,-1]))!=(ncol(z)-1),]
         hc <- hchart_cor(cor(z[,-1],use = 'pairwise.complete.obs'),sourceref = SOURCEREF)
         rows <- max(c(300,ncol(z[,-1]) *100))
         rows <- paste0(rows,"px")
         output$tempd <- renderHighchart(hc)
         highchartOutput("tempd")
       })
+      
+      output$sc_ridgeplot <- renderUI({ 
+        output$tempqwsd <- renderPlot({
+          mx <- reshape::melt(z,measure.vars=names(z[,-1]))
+          ggplot(mx, aes(x = value, y = variable,fill=stat(x))) +
+            geom_density_ridges_gradient(scale = 3,alpha=0.5) +
+            scale_fill_viridis_c(name = "Avg. Expn",space = 'Lab',alpha = .3,option = 'C') +
+            labs(title = 'Gene expression')+xlab("Expression value")+ylab("")+
+            theme_bw()+
+            theme(axis.text = element_text(color = 'black'),
+                  legend.position = 'bottom')
+        })
+        plotOutput("tempqwsd")
+      })
+      
+      #mx <- reshape::melt(z,measure.vars=names(z[,-1]))
+      
       scProg$set(message = "done..", value = 1)
       
     }
@@ -432,8 +510,8 @@ observeEvent(c(variables$expndf,input$sc_corrcelltypego),{
 
 
 ## multigene correlations scatter
-observeEvent(c(variables$expndf,input$sc_corrscattergo),{
-  if(input$AppTab=='scstudy' & isTruthy(input$sc_corrscattergo) & 
+observeEvent(c(variables$expndf,input$sc_corrscattergo, input$sc_corrcelltypego),{
+  if(input$AppTab=='scstudy' & isTruthy(input$sc_corrscattergo) & isTruthy(input$sc_corrcelltypego) &
      isTruthy(variables$expndf) & isTruthy(variables$sc_louvain) & isTRUE(ncol(variables$expndf)>1) &
      isTruthy(input$sc_corrgenex) & isTruthy(input$sc_corrgeney)){
     
@@ -446,14 +524,20 @@ observeEvent(c(variables$expndf,input$sc_corrscattergo),{
     z <- as.matrix(z)
     z[is.na(z)] <- 0
     z <- as.data.frame(z)
+    z <- cbind(celltype=variables$sc_louvain[,variables$celltype],as.data.frame(z))
+    if(isTruthy(input$sc_corrcelltype)){
+      z <- z[z[,1]%in%input$sc_corrcelltype,]
+    }
     
+    ##--- scatterplot
     if(input$sc_corrgenex %in% names(z) & input$sc_corrgeney %in% names(z)){
       output$sc_corrscatter <- renderUI({
         output$tempdx <- renderPlot({
           smoothScatter(x = z[,input$sc_corrgenex],y = z[,input$sc_corrgeney],
                         xlab = input$sc_corrgenex,ylab = input$sc_corrgeney,
-                        colramp = colorRampPalette(hcl.colors(100, palette = "Purples 3"))
-                        )
+                        colramp = colorRampPalette(c("#efedf5", "#00FEFF", "#45FE4F",
+                                                     "#FCFF00", "#FF9400", "#FF3100"))
+          )
         })
         plotOutput("tempdx")
       })
@@ -464,6 +548,53 @@ observeEvent(c(variables$expndf,input$sc_corrscattergo),{
     
   }
 })
+
+## multigene facet by expression
+observeEvent(c(variables$expndf,input$sc_fbego),{
+  if(input$AppTab=='scstudy' & isTruthy(input$sc_fbego) & isTruthy(input$sc_fbe) &
+     isTruthy(variables$expndf) & isTruthy(variables$sc_louvain) & isTRUE(ncol(variables$expndf)>1)){
+    
+    scProg <- shiny::Progress$new()
+    on.exit(scProg$close())
+    scProg$set(message = paste0("displaying facet by expression violin plot"), value = 0)
+    message("displaying facet by expression violin plot\n")
+    z <- variables$expndf
+    z <- as.matrix(z)
+    z[is.na(z)] <- 0
+    z <- as.data.frame(z)
+    z <- cbind(celltype=variables$sc_louvain[,variables$celltype],as.data.frame(z))
+    z$basegene <- ifelse(z[,input$sc_fbe]>BASE_EXPN_VAL,"Expressing","Non-expressed")
+    z[,input$sc_fbe] <- NULL
+    z <- reshape::melt(z,measure.vars=names(z)[!names(z)%in%c('celltype','basegene')])
+    output$sc_facetbyexpnviolin <- renderUI({
+      output$tempde <- renderPlot({
+        z %>%
+          ggplot(aes(x=celltype,y=value,fill=basegene))+
+          geom_violin(scale = 'width',draw_quantiles = c(0.5))+
+          facet_wrap(~variable,ncol = 1,scales = "free_y",strip.position = "right")+
+          scale_x_discrete(labels=function(x) paste0(strtrim(x = x,width = 18),"..") )+
+          theme_bw()+theme(legend.position = "right",
+                           axis.text = element_text(size=14),
+                           axis.text.x = element_text(angle=-45,hjust=0,vjust=1),
+                           axis.title = element_text(size=16),
+                           legend.text = element_text(size=14),
+                           legend.title = element_text(size=14),
+                           strip.text = element_text(angle=0,hjust=1,size = 14),
+                           strip.background = element_blank(),
+                           plot.title = element_text(size=20,hjust=0.5),
+                           plot.subtitle = element_text(size=12,hjust=0.5))+
+          xlab("")+ylab("normalized expresion,log2")+
+          guides(fill=guide_legend(title=input$sc_fbe))
+      })
+      plotOutput("tempde")
+    })    
+    scProg$set(message = "done..", value = 1)
+  }
+})
+    
+
+
+
 
 ## multigene coexpression
 observeEvent(c(variables$expndf),{
@@ -658,6 +789,79 @@ observeEvent({input$sc_catvar_expncount},{
 
 
 
+##--------------------------------------------------------------
+##--- counts 
+##--------------------------------------------------------------
+observe({
+  updateSelectizeInput(session, 'qc_attrib01',
+                       choices = c(variables$celltype,variables$donor,variables$catvars), #variables$sel_catvar
+                       selected =variables$celltype,server=TRUE)
+})
+observe({
+  if(isTruthy(input$qc_attrib01) & isTruthy(variables$sc_louvain)){
+    if(length(input$qc_attrib01)>2){
+      updateSelectizeInput(session, 'qc_attrib01a',
+                           choices = unique(variables$sc_louvain[,input$qc_attrib01[3]]), #variables$sel_catvar
+                           selected =NULL,server=TRUE)
+    }
+  }
+})
+observeEvent(c(input$sel_qcptgo),{
+  if(isTruthy(variables$sc_louvain) & isTruthy(input$qc_attrib01) &
+     isTruthy(input$rad_qcptgrp) & isTruthy(variables$donor)){
+    
+    message("  ..preparing cell count plot\n")
+    
+    ad_features = input$qc_attrib01
+    if(input$rad_qcptgrp==2){
+      message("  ...normalizing the counts per donor\n")
+      ad_features = unique(c(input$qc_attrib01,variables$donor))
+      z <- variables$sc_louvain %>% 
+        dplyr::group_by_at(ad_features) %>% 
+        dplyr::select(dplyr::all_of('value')) %>% 
+        dplyr::summarise_all(c(length))
+      z <- z %>%
+        dplyr::group_by_at(variables$donor) %>%
+        dplyr::mutate(subgroupcount = sum(value))
+      z$fraction <- round(z$value/z$subgroupcount,3) 
+    }else if(input$rad_qcptgrp==1){
+      z <- variables$sc_louvain
+    }
+    
+    if(isTruthy(input$qc_attrib01a)){
+      if(length(input$qc_attrib01)>2){
+        z <- subset(z,get(input$qc_attrib01[3])==input$qc_attrib01a)
+      }
+    }
+    
+    if(input$rad_qcptgrp==1){
+      output$sc_qcbarplot <- renderHighchart({
+        dhc_columnPlot(pl=z,
+                       features = ad_features,
+                       ycol = 'value',plotType = 'count',
+                       log.transform = F,
+                       main = paste0("Cell type proportions<br>(",paste0(ad_features,collapse = ","),")"),
+                       xlab = "",ylab = "proportion of all cells",
+                       sourceref=SOURCEREF)
+      })
+    }else if(input$rad_qcptgrp==2){
+      output$sc_qcbarplot <- renderHighchart({
+        dhc_boxPlot(pl=z,
+                    features = ad_features[ad_features!=variables$donor],
+                    ycol = 'fraction',
+                    log.transform = F,
+                    main = paste0("Cell type proportions<br>(",paste0(ad_features[ad_features!=variables$donor],collapse = ","),")"),
+                    xlab = "",ylab = 'proportion of cells per donor',
+                    sourceref=SOURCEREF)
+        })
+    }
+    
+    
+  }
+})
+
+
+
 
 
 ##--------------------------------------------------------------
@@ -762,26 +966,9 @@ observeEvent(c(variables$sc_louvain,input$sel_donorgo),{
 ##--- QC plots 
 ##--------------------------------------------------------------
 observe({
-  updateSelectizeInput(session, 'qc_attrib01',
-                       choices = c(variables$celltype,variables$donor,variables$catvars), #variables$sel_catvar
-                       selected =variables$celltype,server=TRUE)
-})
-observe({
   updateSelectizeInput(session, 'qc_attrib02',
                        choices = c(variables$contvars), #variables$sel_catvar
                        selected =variables$contvars[1],server=TRUE)
-})
-observeEvent({input$qc_attrib01},{
-  if(isTruthy(variables$sc_louvain) & isTruthy(input$qc_attrib01)){
-    output$sc_qcbarplot <- renderHighchart({
-      dhc_columnPlot(pl=variables$sc_louvain,
-                     features = input$qc_attrib01,
-                     ycol = 'value',plotType = 'count',
-                     log.transform = F,main = paste0("Cell type proportions<br>(",input$qc_attrib01,")"),
-                     xlab = "",ylab = "% of total",
-                     sourceref=SOURCEREF)
-    })
-  }
 })
 observeEvent({input$qc_attrib02},{
   if(isTruthy(variables$sc_louvain) & isTruthy(input$qc_attrib02)){

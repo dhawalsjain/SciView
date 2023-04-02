@@ -19,9 +19,7 @@ tabItem(tabName = "compare",
                         fluidRow(
                           tags$hr(),
                           tags$br(),
-                          div(style='width:800px;overflow-x: auto;height:400px;overflow-y: auto;',
-                              DT::dataTableOutput("comparativeExpnTable") %>% shinycssloaders::withSpinner(color="#0dc5c1")
-                          )
+                          reactable::reactableOutput("comparativeExpnTable") %>% shinycssloaders::withSpinner(color="#0dc5c1")
                         ),
                         fluidRow(
                           div(style='width:800px;overflow-x: auto;height:600px;overflow-y: auto;',

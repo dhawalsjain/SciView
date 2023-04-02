@@ -82,8 +82,10 @@ tabItem(tabName = "scsel",
         ),
         tags$br(),
         #-- table 
+        #reactable::reactableOutput("browse_studytable")%>% shinycssloaders::withSpinner(color="#0dc5c1"),
         DT::dataTableOutput("browse_studytable") %>% shinycssloaders::withSpinner(color="#0dc5c1"),
         tags$br(),
+        ##---
         fluidRow(
                 column(width = 12,
                        box(

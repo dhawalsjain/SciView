@@ -132,6 +132,12 @@ server <- function(input, output, session) {
     }
   })
   
+  ##--- make plot resizable and dragable
+  #jqui_resizable(ui = "#sc_facetbyexpnviolin",operation = 'enable')
+  #jqui_resizable(ui = "#sc_dedotplot",operation = 'enable' )
+  #jqui_resizable(ui = "#sc_markerdotplot",operation = 'enable')
+  #jqui_draggable(ui = "#sc_dedotplot,#sc_markerdotplot")
+  
   ###---  1) genes database
   Prog$set(message = "gathering available studies..", value = 0.3)
   VARS$connGenes <- ({
@@ -141,7 +147,8 @@ server <- function(input, output, session) {
   ###---- 2.0) ops on DB.txt file 
   output$availstudypaths <- renderText({
     xx <- tryCatch({
-      read.delim(file = SCDBFILE,header = F,comment.char = "#",stringsAsFactors = F)$V1
+      xx <- read.delim(file = SCDBFILE,header = F,comment.char = "#",stringsAsFactors = F)$V1
+      sapply(xx, function(u) file.exists(u))
     },error= function(e){
       NULL
     })
@@ -177,14 +184,16 @@ server <- function(input, output, session) {
   ###---- 2.1) set the sqlite databases with access 
   VARS$dbb <- ({
     tryCatch({
-      read.delim(file = SCDBFILE,header = F,comment.char = "#",stringsAsFactors = F)$V1
+      xx <- read.delim(file = SCDBFILE,header = F,comment.char = "#",stringsAsFactors = F)$V1
+      xx[sapply(xx, function(u) file.exists(u))]
     },error= function(e){
     })
   })
   observeEvent({input$infile},{
     VARS$dbb = NULL
     VARS$dbb = tryCatch({
-      read.delim(file = SCDBFILE,header = F,comment.char = "#",stringsAsFactors = F)$V1
+      xx <- read.delim(file = SCDBFILE,header = F,comment.char = "#",stringsAsFactors = F)$V1
+      xx[sapply(xx, function(u) file.exists(u))]
     },error= function(e){
     })
     cat(VARS$roots,"\n")
@@ -224,6 +233,7 @@ server <- function(input, output, session) {
         connList <- list()
         if(length(VARS$dbb)>0){
           for(f in VARS$dbb){
+            cat("populate meta object: ",f,"\n")
             id = pddExpn::randomStringGenerator(n = 1,lenght = 8)
             if(USE_REMOTE_DB==TRUE){
               connList[[id]] <- f #gsub("^scRNA_","",f)
@@ -266,23 +276,64 @@ server <- function(input, output, session) {
   
   
   ##--- 5) list available studies
-  output$browse_studytable <- DT::renderDataTable({
-    if(isTruthy(nrow(VARS$sc_studies)>0)){
-      cf <- VARS$sc_studies
-      cf <- cf[,c("STATUS","ORGANISM","DISEASE","TISSUES","CellCount","SHORTDESCR")]
-      names(cf) <- c("Status",'Species','Disease/Condition','Tissue','Number of Cells','Brief')
-      cf$Species <- paste0(
-        "<img src='",cf$Species,".png' height='30' data-toggle='tooltip' data-placement='right' title='",cf$Species,"'></img>"
-      )
-      cf$Status <- paste0(
-        "<img src='",cf$Status,".png' height='30' data-toggle='tooltip' data-placement='right' title='",cf$Status,"'></img>"
-      )
-      datatable(cf,rownames = F,selection='single',extensions = 'Buttons',
-                options = list(pageLength = 20, autoWidth = TRUE),escape = FALSE)
-    }
-  })
+  if(T){
+    output$browse_studytable <- DT::renderDataTable({
+      if(isTruthy(nrow(VARS$sc_studies)>0)){
+        cf <- VARS$sc_studies
+        cf <- cf[,c("STATUS","ORGANISM","DISEASE","TISSUES","CellCount","SHORTDESCR")]
+        names(cf) <- c("Status",'Species','Disease/Condition','Tissue','Number of Cells','Brief')
+        cf$Species <- paste0(
+          "<img src='",cf$Species,".png' height='30' data-toggle='tooltip' data-placement='right' title='",cf$Species,"'></img>"
+        )
+        cf$Status <- paste0(
+          "<img src='",cf$Status,".png' height='30' data-toggle='tooltip' data-placement='right' title='",cf$Status,"'></img>"
+        )
+        datatable(cf,filter='top',autoHideNavigation = T, rownames = F,selection='single',extensions = 'Buttons',
+                  options = list(pageLength = 20, autoWidth = TRUE),escape = FALSE) %>%
+          formatStyle('Number of Cells',
+                      background = styleColorBar(cf$'Number of Cells', '#a1d99b'),
+                      backgroundSize = '95% 50%',
+                      backgroundRepeat = 'no-repeat',
+                      backgroundPosition = 'right')
+      }
+    })
+  }
   
-  
+  if(F){
+    output$browse_studytable <- reactable::renderReactable({
+      if(isTruthy(nrow(VARS$sc_studies)>0)){
+        cf <- VARS$sc_studies
+        cf <- cf[,c("STATUS","ORGANISM","DISEASE","TISSUES","CellCount","SHORTDESCR")]
+        names(cf) <- c("Status",'Species','Condition','Tissue','Number','Brief')
+        reactable(cf,
+                  defaultPageSize = 20,
+                  bordered = TRUE,
+                  defaultColDef = colDef(footerStyle = list(fontWeight = "italic",color='#41ab5d')),
+                  columns = list(
+                    Status = colDef(filterable = T,searchable = T,sortable = T,resizable = T, footer = 'Usage restrictions',cell = function(value) {
+                      image <- img(src = sprintf("%s.png", value), style = "height: 24px;", alt = value)
+                      tagList(div(style = "display: inline-block; width: 45px;", image),
+                              value
+                      )}),
+                    Species = colDef(filterable = T,searchable = T,sortable = T,resizable = T, footer = 'Organism',cell = function(value) {
+                      image <- img(src = sprintf("%s.png", value), style = "height: 24px;", alt = value)
+                      tagList(div(style = "display: inline-block; width: 45px;", image),
+                              value
+                      )}),
+                    Condition = colDef(name = "Biological Condition",filterable = T,searchable = T,sortable = T,resizable = T, footer = 'Disease/Experiment/Treatment-group etc'),
+                    Tissue = colDef(filterable = T,searchable = T,sortable = T,resizable = T),
+                    Number = colDef(name="Number of Cells",filterable = T,searchable = F,sortable = T,resizable = T,
+                                    style = function(value) {
+                                      bar_style(width = value / max(cf$Number), fill = "#2c5e77", color = "#fff")
+                                    },
+                                    align = "left",
+                                    format = colFormat(digits = 1)),
+                    Brief = colDef(name="Brief Study description",filterable = T,searchable = T,sortable = T,resizable = T)
+                  )
+        )
+      }
+    })
+  }
 
   source(file = "server_df.R",local = TRUE,encoding = "UTF-8")$value
   Prog$set(message = "retrieved data for vizualisations..", value = 0.7)
